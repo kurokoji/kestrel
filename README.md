@@ -1,10 +1,10 @@
-<p align="center">
+<div align="center">
   <img src="assets/icon_preview.png" width="128" height="128" alt="Kestrel Filer icon">
-</p>
 
-# Kestrel Filer
+  # Kestrel Filer
 
-[![Tests](https://github.com/kurokoji/kestrel/actions/workflows/tests.yml/badge.svg)](https://github.com/kurokoji/kestrel/actions/workflows/tests.yml)
+  [![Tests](https://github.com/kurokoji/kestrel/actions/workflows/tests.yml/badge.svg)](https://github.com/kurokoji/kestrel/actions/workflows/tests.yml)
+</div>
 
 Windows専用・超軽量なデュアルペインファイラー。C++23 + 素のWin32 API / Windows Common Controls のみで実装しており、Electron・Qt・wxWidgets・WinUI・WPF・MFC・.NET などのフレームワークは一切使用していません。
 
