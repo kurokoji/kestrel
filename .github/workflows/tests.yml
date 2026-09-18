@@ -1,4 +1,4 @@
-name: テスト
+name: Tests
 
 on:
   push:
@@ -18,11 +18,11 @@ jobs:
 
       - uses: seanmiddleditch/gha-setup-ninja@v5
 
-      - name: 設定
+      - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
-      - name: ビルド
+      - name: Build
         run: cmake --build build
 
-      - name: テスト実行
+      - name: Run tests
         run: .\build\kestrel_tests.exe
