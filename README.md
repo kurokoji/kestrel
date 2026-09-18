@@ -1,3 +1,5 @@
+<img src="assets/icon_preview.png" width="64" height="64" alt="Kestrel Filer icon">
+
 # Kestrel Filer
 
 [![Tests](https://github.com/kurokoji/kestrel/actions/workflows/tests.yml/badge.svg)](https://github.com/kurokoji/kestrel/actions/workflows/tests.yml)
