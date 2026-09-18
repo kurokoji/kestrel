@@ -578,14 +578,15 @@ void MainWindow::layoutChildren() {
     const int height = rc.bottom - rc.top;
     if (width <= 0 || height <= 0) return;
 
-    // Keep the tree/left/right columns at roughly the same proportions
-    // when the window itself is resized, instead of leaving tree/left
-    // pinned at a fixed pixel width and dumping all the change onto the
-    // right pane. A splitter drag doesn't change the outer window width,
-    // so this only kicks in on an actual resize.
+    // Keep the left/right pane split at roughly the same proportions when
+    // the window itself is resized, instead of leaving it pinned at a
+    // fixed pixel width and dumping all the change onto the right pane. A
+    // splitter drag doesn't change the outer window width, so this only
+    // kicks in on an actual resize. The tree column is deliberately left
+    // out of this - it stays a fixed pixel width across resizes, only
+    // changing via its own splitter drag.
     if (lastLayoutWidth_ > 0 && width != lastLayoutWidth_) {
         const double scale = static_cast<double>(width) / lastLayoutWidth_;
-        treeWidth_ = static_cast<int>(std::lround(treeWidth_ * scale));
         leftWidth_ = static_cast<int>(std::lround(leftWidth_ * scale));
     }
     lastLayoutWidth_ = width;
