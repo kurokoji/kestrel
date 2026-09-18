@@ -1,0 +1,67 @@
+#include "doctest.h"
+
+#include "SessionFormat.h"
+
+TEST_CASE("splitTab splits on tabs, including empty trailing fields") {
+    CHECK(SessionFormat::splitTab(L"a\tb\tc") == std::vector<std::wstring>{L"a", L"b", L"c"});
+    CHECK(SessionFormat::splitTab(L"a\t\tc") == std::vector<std::wstring>{L"a", L"", L"c"});
+    CHECK(SessionFormat::splitTab(L"solo") == std::vector<std::wstring>{L"solo"});
+}
+
+TEST_CASE("serialize then parseContent round-trips a full SessionData") {
+    SessionData data;
+    data.windowX = 10;
+    data.windowY = 20;
+    data.windowW = 800;
+    data.windowH = 600;
+    data.maximized = true;
+    data.treeWidth = 150;
+    data.leftWidth = 300;
+    data.previewHeight = 180;
+    data.activePane = 1;
+    data.singlePane = true;
+    data.leftTabs = {L"C:\\foo", L"C:\\bar"};
+    data.leftActiveTab = 1;
+    data.rightTabs = {L"D:\\baz"};
+    data.rightActiveTab = 0;
+
+    const std::wstring serialized = SessionFormat::serialize(data);
+    const SessionData parsed = SessionFormat::parseContent(serialized);
+
+    CHECK(parsed.windowX == 10);
+    CHECK(parsed.windowY == 20);
+    CHECK(parsed.windowW == 800);
+    CHECK(parsed.windowH == 600);
+    CHECK(parsed.maximized == true);
+    CHECK(parsed.treeWidth == 150);
+    CHECK(parsed.leftWidth == 300);
+    CHECK(parsed.previewHeight == 180);
+    CHECK(parsed.activePane == 1);
+    CHECK(parsed.singlePane == true);
+    CHECK(parsed.leftTabs == std::vector<std::wstring>{L"C:\\foo", L"C:\\bar"});
+    CHECK(parsed.leftActiveTab == 1);
+    CHECK(parsed.rightTabs == std::vector<std::wstring>{L"D:\\baz"});
+    CHECK(parsed.rightActiveTab == 0);
+}
+
+TEST_CASE("parseContent tolerates CRLF line endings") {
+    const SessionData data = SessionFormat::parseContent(L"T\t0\tC:\\one\r\nT\t1\tC:\\two\r\n");
+    CHECK(data.leftTabs == std::vector<std::wstring>{L"C:\\one"});
+    CHECK(data.rightTabs == std::vector<std::wstring>{L"C:\\two"});
+}
+
+TEST_CASE("parseContent skips malformed lines instead of failing the whole parse") {
+    const SessionData data = SessionFormat::parseContent(L"W\tnot-a-number\tx\ty\tz\tw\nT\t0\tC:\\ok\n");
+    CHECK(data.leftTabs == std::vector<std::wstring>{L"C:\\ok"});
+}
+
+TEST_CASE("parseContent ignores unknown record types") {
+    const SessionData data = SessionFormat::parseContent(L"X\tunknown\tstuff\nT\t0\tC:\\ok\n");
+    CHECK(data.leftTabs == std::vector<std::wstring>{L"C:\\ok"});
+}
+
+TEST_CASE("parseContent of empty content yields empty tabs") {
+    const SessionData data = SessionFormat::parseContent(L"");
+    CHECK(data.leftTabs.empty());
+    CHECK(data.rightTabs.empty());
+}

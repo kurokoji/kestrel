@@ -24,6 +24,7 @@ add_executable(kestrel WIN32
     src/FileClassify.cpp
     src/PreviewPane.cpp
     src/Session.cpp
+    src/SessionFormat.cpp
     src/kestrel.rc
 )
 
@@ -68,6 +69,8 @@ if(KESTREL_BUILD_TESTS)
         src/FileEntrySort.cpp
         tests/FileClassifyTests.cpp
         src/FileClassify.cpp
+        tests/SessionFormatTests.cpp
+        src/SessionFormat.cpp
     )
 
     target_include_directories(kestrel_tests PRIVATE
