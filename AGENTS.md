@@ -12,6 +12,27 @@ here, in the same terse style as the existing entries. This file is only
 useful if it keeps growing; don't let a hard-won lesson evaporate at the
 end of the session.
 
+## TDD workflow (t-wada style)
+
+- New logic changes follow Red-Green-Refactor: write a failing test in
+  `tests/` first, confirm it fails, write the minimum code to pass, then
+  refactor with the test green. Don't write production code ahead of a
+  failing test that demands it.
+- Test framework is [doctest](https://github.com/doctest/doctest), vendored
+  as a single header at `third_party/doctest/doctest.h` (not a submodule -
+  update by re-downloading the file if ever needed).
+- `kestrel_tests` is a separate CMake executable target (see
+  `CMakeLists.txt`, `KESTREL_BUILD_TESTS` option, default ON) built
+  alongside `kestrel` by the same `build.bat`. It links no Win32 UI code -
+  only plain-logic headers/sources included directly.
+- Only Win32-independent logic is realistically unit-testable here (see
+  `Formatting.h`/`tests/FormattingTests.cpp` for the pattern). Code that's
+  fundamentally message-loop/HWND-shaped (window procs, notification
+  handlers) isn't a good TDD target with this harness - extract the pure
+  logic out of it into a plain function/class first if it needs coverage,
+  rather than trying to unit-test the HWND-bound code directly.
+- Run tests with `build\kestrel_tests.exe` after building.
+
 ## Build & rebuild loop
 
 - `build.bat` in the repo root loads the VS dev environment and runs
