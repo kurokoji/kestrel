@@ -1,4 +1,6 @@
-<img src="assets/icon_preview.png" width="128" height="128" alt="Kestrel Filer icon">
+<p align="center">
+  <img src="assets/icon_preview.png" width="128" height="128" alt="Kestrel Filer icon">
+</p>
 
 # Kestrel Filer
 
