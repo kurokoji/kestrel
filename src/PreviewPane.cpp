@@ -1,5 +1,6 @@
 #include "PreviewPane.h"
 #include "ComPtr.h"
+#include "FileClassify.h"
 #include "Formatting.h"
 
 #include <objbase.h>
@@ -29,39 +30,6 @@ struct PreviewResult {
     std::wstring textContent;
     std::unique_ptr<Gdiplus::Bitmap> image;
 };
-
-std::wstring utf8ToWide(const std::vector<BYTE>& bytes) {
-    if (bytes.empty()) return L"";
-    int len = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, reinterpret_cast<const char*>(bytes.data()),
-                                   static_cast<int>(bytes.size()), nullptr, 0);
-    if (len <= 0) return L"";
-    std::wstring w(len, L'\0');
-    MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, reinterpret_cast<const char*>(bytes.data()),
-                         static_cast<int>(bytes.size()), w.data(), len);
-    return w;
-}
-
-std::wstring ansiToWide(const std::vector<BYTE>& bytes) {
-    if (bytes.empty()) return L"";
-    int len = MultiByteToWideChar(CP_ACP, 0, reinterpret_cast<const char*>(bytes.data()),
-                                   static_cast<int>(bytes.size()), nullptr, 0);
-    if (len <= 0) return L"";
-    std::wstring w(len, L'\0');
-    MultiByteToWideChar(CP_ACP, 0, reinterpret_cast<const char*>(bytes.data()), static_cast<int>(bytes.size()),
-                         w.data(), len);
-    return w;
-}
-
-bool isImageExtension(const std::wstring& ext) {
-    static const std::wstring exts[] = {L".bmp", L".jpg", L".jpeg", L".png", L".gif", L".ico", L".tif", L".tiff"};
-    return std::ranges::find(exts, ext) != std::end(exts);
-}
-
-bool isVideoExtension(const std::wstring& ext) {
-    static const std::wstring exts[] = {L".mp4", L".m4v", L".mkv", L".avi", L".mov", L".wmv",
-                                         L".webm", L".mpg", L".mpeg", L".3gp"};
-    return std::ranges::find(exts, ext) != std::end(exts);
-}
 
 std::unique_ptr<Gdiplus::Bitmap> loadImageBitmap(const std::wstring& path) {
     auto bmp = std::make_unique<Gdiplus::Bitmap>(path.c_str());
@@ -101,26 +69,9 @@ bool loadTextFileContent(const std::wstring& path, std::wstring& outText) {
     if (!ok) return false;
     buf.resize(read);
 
-    if (read == 0) {
-        outText.clear();
-        return true;
-    }
-
-    size_t control = 0;
-    for (BYTE b : buf) {
-        if (b == 0) return false;  // embedded NUL - treat as binary
-        if (b < 0x09 || (b > 0x0D && b < 0x20)) ++control;
-    }
-    if (control * 20 > buf.size()) return false;  // >5% control chars - treat as binary
-
-    if (buf.size() >= 3 && buf[0] == 0xEF && buf[1] == 0xBB && buf[2] == 0xBF) {
-        outText = utf8ToWide(std::vector<BYTE>(buf.begin() + 3, buf.end()));
-    } else if (buf.size() >= 2 && buf[0] == 0xFF && buf[1] == 0xFE) {
-        outText.assign(reinterpret_cast<const wchar_t*>(buf.data() + 2), (buf.size() - 2) / 2);
-    } else {
-        outText = utf8ToWide(buf);
-        if (outText.empty()) outText = ansiToWide(buf);
-    }
+    auto decoded = FileClassify::decodeTextContent(buf);
+    if (!decoded) return false;
+    outText = std::move(*decoded);
     return true;
 }
 
@@ -263,12 +214,12 @@ void PreviewPane::loadWorker(std::wstring path, std::wstring ext, uint64_t size,
     result->requestId = requestId;
     result->detail = Formatting::formatSize(size);
 
-    if (isImageExtension(ext) && size <= kMaxImagePreviewFile) {
+    if (FileClassify::isImageExtension(ext) && size <= kMaxImagePreviewFile) {
         if (auto bmp = loadImageBitmap(path)) {
             result->mode = Mode::Image;
             result->image = std::move(bmp);
         }
-    } else if (isVideoExtension(ext)) {
+    } else if (FileClassify::isVideoExtension(ext)) {
         if (auto bmp = loadShellThumbnailBitmap(path)) {
             result->mode = Mode::Image;
             result->image = std::move(bmp);

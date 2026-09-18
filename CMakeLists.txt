@@ -21,6 +21,7 @@ add_executable(kestrel WIN32
     src/FileOperations.cpp
     src/IconCache.cpp
     src/Dialogs.cpp
+    src/FileClassify.cpp
     src/PreviewPane.cpp
     src/Session.cpp
     src/kestrel.rc
@@ -65,6 +66,8 @@ if(KESTREL_BUILD_TESTS)
         tests/FormattingTests.cpp
         tests/FileEntrySortTests.cpp
         src/FileEntrySort.cpp
+        tests/FileClassifyTests.cpp
+        src/FileClassify.cpp
     )
 
     target_include_directories(kestrel_tests PRIVATE
