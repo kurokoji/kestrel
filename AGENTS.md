@@ -129,10 +129,16 @@ commit - don't let it drift out of sync with what the app actually does.
 
 ## Design decisions worth preserving
 
-- Deliberately no `LVS_SHOWSELALWAYS` on the file-list controls: the
-  focus-sensitive blue/gray selection color is *the* indicator of which
-  pane is active, on top of the custom-painted frame. Don't add it back
-  without also reconsidering the frame.
+- The file-list controls use `LVS_SHOWSELALWAYS`. Without it, a
+  ListView's selection isn't just dimmed when it lacks keyboard focus -
+  it's fully hidden, and since Windows clears/restores focus across
+  window activation, that meant Alt-Tabbing away from the app made the
+  active pane's selection vanish entirely (reported as a usability bug,
+  fixed by adding this style - see FilePane::create). With the style,
+  the focus-sensitive blue/gray selection color is still *the* indicator
+  of which pane is active, on top of the custom-painted frame - that
+  part of the original design is unaffected; only the previously-fully-
+  invisible unfocused state became visible-but-gray.
 - Search (`Ctrl+F`) highlights matches in place rather than filtering the
   list - explicitly requested; don't change this to a hide/filter model.
 - File operations (copy/move/delete/rename) are delegated to

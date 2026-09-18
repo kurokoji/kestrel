@@ -117,12 +117,17 @@ bool FilePane::create(HWND parent, HINSTANCE hInstance, int controlId, int paneI
     SendMessageW(searchBox_, WM_SETFONT, reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)), TRUE);
     SetWindowSubclass(searchBox_, SearchBoxSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
 
-    // Deliberately no LVS_SHOWSELALWAYS: leaving selection highlight
-    // focus-sensitive (blue when focused, gray otherwise) is the standard
-    // Windows way of showing which pane is active, and costs no extra
-    // code.
+    // LVS_SHOWSELALWAYS: without it, a list-view's selection highlight
+    // isn't just dimmed when the control lacks focus - it's fully hidden
+    // (comctl32 default). That happens whenever the *whole app* loses
+    // focus (Alt+Tab away), since Windows clears focus on deactivation
+    // and restores it on reactivation - so without this style, you can't
+    // tell what's selected while another window is in front. With it,
+    // unfocused selection still renders gray, which conveniently doubles
+    // as the active-pane indicator (blue focused / gray unfocused) on top
+    // of the custom-painted frame.
     hwnd_ = CreateWindowExW(WS_EX_CLIENTEDGE, WC_LISTVIEWW, L"",
-                             WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_OWNERDATA | LVS_EDITLABELS,
+                             WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_OWNERDATA | LVS_EDITLABELS | LVS_SHOWSELALWAYS,
                              0, 0, 0, 0, parent, reinterpret_cast<HMENU>(static_cast<INT_PTR>(controlId)),
                              hInstance, nullptr);
     if (!hwnd_ || !tabHwnd_) return false;
