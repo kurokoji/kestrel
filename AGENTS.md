@@ -5,6 +5,13 @@ pure Win32/Common Controls C++23 app (see README.md for the feature/build
 overview) - the gotchas below are things that cost real time to find during
 development and aren't obvious from reading the Win32 docs alone.
 
+**Keep this file up to date.** When you (the agent) hit something during
+this project that cost real debugging time, was non-obvious from the
+docs, or reflects a deliberate design decision the user made - add it
+here, in the same terse style as the existing entries. This file is only
+useful if it keeps growing; don't let a hard-won lesson evaporate at the
+end of the session.
+
 ## Build & rebuild loop
 
 - `build.bat` in the repo root loads the VS dev environment and runs
