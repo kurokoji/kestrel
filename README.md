@@ -1,5 +1,7 @@
 # Kestrel Filer
 
+[![テスト](https://github.com/kurokoji/kestrel/actions/workflows/tests.yml/badge.svg)](https://github.com/kurokoji/kestrel/actions/workflows/tests.yml)
+
 Windows専用・超軽量なデュアルペインファイラー。C++23 + 素のWin32 API / Windows Common Controls のみで実装しており、Electron・Qt・wxWidgets・WinUI・WPF・MFC・.NET などのフレームワークは一切使用していません。
 
 コンセプトは Windows 2000 / Classic UI、CDE/Motif、Midnight Commander のような、密度の高いクラシックなデスクトップアプリです。見た目だけでなく、実装自体も軽量であることを目指しています。
