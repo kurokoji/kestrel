@@ -44,6 +44,7 @@ cmake --build build
 | `Tab` | 左右ペインの切り替え |
 | `Ctrl+L` | アドレスバーへフォーカス |
 | `Ctrl+T` / `Ctrl+W` | 新しいタブ / タブを閉じる |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab` | 次のタブ / 前のタブ |
 | `Ctrl+F` | 現在のディレクトリ内を検索 |
 | `Ctrl+Shift+T` | ツリーへフォーカス |
 | `Ctrl+U` | シングルペイン表示の切り替え |
