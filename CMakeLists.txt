@@ -15,6 +15,7 @@ add_executable(kestrel WIN32
     src/MainWindow.cpp
     src/TreePane.cpp
     src/FilePane.cpp
+    src/FileEntrySort.cpp
     src/DirectoryModel.cpp
     src/DirectoryWatcher.cpp
     src/FileOperations.cpp
@@ -62,6 +63,8 @@ if(KESTREL_BUILD_TESTS)
     add_executable(kestrel_tests
         tests/test_main.cpp
         tests/FormattingTests.cpp
+        tests/FileEntrySortTests.cpp
+        src/FileEntrySort.cpp
     )
 
     target_include_directories(kestrel_tests PRIVATE

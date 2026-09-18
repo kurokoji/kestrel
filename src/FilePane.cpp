@@ -1,5 +1,6 @@
 #include "FilePane.h"
 #include "Dialogs.h"
+#include "FileEntrySort.h"
 #include "FileOperations.h"
 #include "Formatting.h"
 #include "IconCache.h"
@@ -255,27 +256,7 @@ void FilePane::applyEntries(std::vector<FileEntry> entries) {
 }
 
 void FilePane::sortEntries() {
-    std::ranges::sort(entries_, [this](const FileEntry& a, const FileEntry& b) {
-        if (a.isDirectory() != b.isDirectory()) return a.isDirectory();
-
-        int cmp = 0;
-        switch (sortColumn_) {
-            case 1:
-                cmp = _wcsicmp(a.extension.c_str(), b.extension.c_str());
-                break;
-            case 2:
-                cmp = (a.size < b.size) ? -1 : (a.size > b.size ? 1 : 0);
-                break;
-            case 3:
-                cmp = CompareFileTime(&a.modified, &b.modified);
-                break;
-            default:
-                cmp = _wcsicmp(a.name.c_str(), b.name.c_str());
-                break;
-        }
-        if (cmp == 0) cmp = _wcsicmp(a.name.c_str(), b.name.c_str());
-        return sortAscending_ ? (cmp < 0) : (cmp > 0);
-    });
+    FileEntrySort::sort(entries_, sortColumn_, sortAscending_);
 }
 
 void FilePane::recomputeSelectionStats() {
@@ -531,10 +512,7 @@ void FilePane::drawTabItem(const DRAWITEMSTRUCT& dis) {
 }
 
 bool FilePane::matchesSearch(const FileEntry& e) const {
-    if (searchQuery_.empty()) return false;
-    std::wstring name = e.name;
-    std::ranges::transform(name, name.begin(), ::towlower);
-    return name.find(searchQuery_) != std::wstring::npos;
+    return FileEntrySort::matchesSearch(e, searchQuery_);
 }
 
 void FilePane::toggleSearch() {
