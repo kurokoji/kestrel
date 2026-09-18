@@ -657,6 +657,11 @@ LRESULT FilePane::handleNotify(NMHDR* nmhdr) {
             }
             return 0;
         }
+        case LVN_BEGINDRAG: {
+            auto paths = selectedPaths();
+            if (!paths.empty()) FileOperations::startDrag(parentWnd_, paths);
+            return 0;
+        }
         case NM_DBLCLK: {
             auto* nmia = reinterpret_cast<NMITEMACTIVATE*>(nmhdr);
             if (nmia->iItem >= 0) activateEntry(nmia->iItem);

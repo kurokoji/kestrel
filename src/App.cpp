@@ -4,10 +4,14 @@
 #include <commctrl.h>
 #include <objbase.h>
 #include <objidl.h>
+#include <ole2.h>
 #include <gdiplus.h>
 
 int App::run(HINSTANCE hInstance, int nCmdShow) {
-    CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    // OleInitialize (not plain CoInitializeEx) is required on this thread
+    // before DoDragDrop will work - it's what FilePane's OLE drag-and-drop
+    // source uses to let items be dragged out to Explorer/browsers/etc.
+    OleInitialize(nullptr);
 
     Gdiplus::GdiplusStartupInput gdiplusStartupInput;
     ULONG_PTR gdiplusToken = 0;
@@ -21,7 +25,7 @@ int App::run(HINSTANCE hInstance, int nCmdShow) {
     MainWindow mainWindow;
     if (!mainWindow.create(hInstance, nCmdShow)) {
         Gdiplus::GdiplusShutdown(gdiplusToken);
-        CoUninitialize();
+        OleUninitialize();
         return 1;
     }
 
@@ -46,6 +50,6 @@ int App::run(HINSTANCE hInstance, int nCmdShow) {
     }
 
     Gdiplus::GdiplusShutdown(gdiplusToken);
-    CoUninitialize();
+    OleUninitialize();
     return static_cast<int>(msg.wParam);
 }

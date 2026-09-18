@@ -33,4 +33,12 @@ void openItem(HWND owner, const std::wstring& path);
 // Launches the associated "edit" verb for `path`, falling back to Notepad.
 void editItem(HWND owner, const std::wstring& path);
 
+// Starts an OLE drag-and-drop operation carrying `sources` (all assumed to
+// live in the same folder, as with a single pane's selection) using a real
+// shell IDataObject - so external drop targets (Explorer, browsers, mail
+// clients) see the same CF_HDROP/file-group-descriptor formats Explorer
+// itself would offer. Blocks (pumping messages via DoDragDrop) until the
+// drag ends; returns true if it ended in an actual drop.
+bool startDrag(HWND owner, const std::vector<std::wstring>& sources);
+
 }  // namespace FileOperations

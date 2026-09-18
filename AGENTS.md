@@ -139,3 +139,13 @@ commit - don't let it drift out of sync with what the app actually does.
   `IFileOperation`/`ShellExecuteExW` on purpose, so Explorer's own
   progress UI, conflict resolution, and Recycle Bin behavior "just work"
   without us reimplementing any of it.
+- Outbound drag-and-drop (`FileOperations::startDrag`, wired from
+  `FilePane`'s `LVN_BEGINDRAG`) builds a real shell `IDataObject` via
+  `IShellFolder::GetUIObjectOf(..., IID_IDataObject, ...)` on the
+  selection's PIDLs - same PIDL-binding pattern as the shell context menu
+  in `MainWindow.cpp`'s `getShellContextMenu`. This gets CF_HDROP and
+  every other format Explorer would offer "for free" instead of us having
+  to build a custom `IDataObject`. **`DoDragDrop` requires `OleInitialize`
+  (not just `CoInitializeEx`) on the calling thread** - App.cpp's message
+  loop thread was switched from one to the other for this; don't revert
+  it back to plain `CoInitializeEx` or dragging silently stops working.
