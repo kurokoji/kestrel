@@ -12,6 +12,11 @@ here, in the same terse style as the existing entries. This file is only
 useful if it keeps growing; don't let a hard-won lesson evaporate at the
 end of the session.
 
+**Keep README.md up to date too.** It's user-facing (feature list, build
+instructions, keyboard shortcut table). Any change that adds/removes a
+feature, shortcut, or build step should update README.md in the same
+commit - don't let it drift out of sync with what the app actually does.
+
 ## TDD workflow (t-wada style)
 
 - New logic changes follow Red-Green-Refactor: write a failing test in
