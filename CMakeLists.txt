@@ -25,6 +25,7 @@ add_executable(kestrel WIN32
     src/PreviewPane.cpp
     src/Session.cpp
     src/SessionFormat.cpp
+    src/TabCycle.cpp
     src/kestrel.rc
 )
 
@@ -71,6 +72,8 @@ if(KESTREL_BUILD_TESTS)
         src/FileClassify.cpp
         tests/SessionFormatTests.cpp
         src/SessionFormat.cpp
+        tests/TabCycleTests.cpp
+        src/TabCycle.cpp
     )
 
     target_include_directories(kestrel_tests PRIVATE

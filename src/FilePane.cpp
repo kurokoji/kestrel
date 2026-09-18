@@ -4,6 +4,7 @@
 #include "FileOperations.h"
 #include "Formatting.h"
 #include "IconCache.h"
+#include "TabCycle.h"
 
 #include <windowsx.h>
 
@@ -382,6 +383,11 @@ void FilePane::switchToTab(int index) {
     loadTabIntoLive(index);
     TabCtrl_SetCurSel(tabHwnd_, activeTab_);
     if (onNavigated) onNavigated(*this);
+}
+
+void FilePane::cycleTab(bool forward) {
+    if (tabs_.size() <= 1) return;
+    switchToTab(TabCycle::nextIndex(activeTab_, static_cast<int>(tabs_.size()), forward));
 }
 
 void FilePane::updateActiveTabLabel() {

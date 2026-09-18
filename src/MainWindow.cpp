@@ -486,6 +486,8 @@ void MainWindow::createMenuBar() {
     AppendMenuW(goMenu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(goMenu, MF_STRING, IDM_TAB_NEW, L"新しいタブ(&N)\tCtrl+T");
     AppendMenuW(goMenu, MF_STRING, IDM_TAB_CLOSE, L"タブを閉じる(&C)\tCtrl+W");
+    AppendMenuW(goMenu, MF_STRING, IDM_TAB_NEXT, L"次のタブ(&X)\tCtrl+Tab");
+    AppendMenuW(goMenu, MF_STRING, IDM_TAB_PREV, L"前のタブ(&P)\tCtrl+Shift+Tab");
 
     HMENU toolsMenu = CreatePopupMenu();
     AppendMenuW(toolsMenu, MF_STRING, IDM_TOOLS_OPTIONS, L"オプション(&O)...");
@@ -958,6 +960,12 @@ void MainWindow::onCommand(int id, HWND ctrl) {
             break;
         case IDM_TAB_CLOSE:
             activePane().closeTab();
+            break;
+        case IDM_TAB_NEXT:
+            activePane().cycleTab(true);
+            break;
+        case IDM_TAB_PREV:
+            activePane().cycleTab(false);
             break;
 
         case IDM_TOOLS_OPTIONS:

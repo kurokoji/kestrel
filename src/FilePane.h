@@ -62,6 +62,7 @@ public:
 
     void newTab();
     void closeTab(int index = -1);  // -1 = the active tab; a no-op if it's the only one left
+    void cycleTab(bool forward);  // Ctrl+Tab / Ctrl+Shift+Tab; wraps, no-op with one tab
 
     // Session persistence: the paths of every open tab (active tab first
     // synced so its path is current) and which one is active, for saving

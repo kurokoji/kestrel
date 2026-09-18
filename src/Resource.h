@@ -28,6 +28,8 @@
 
 #define IDM_TAB_NEW                1305
 #define IDM_TAB_CLOSE              1306
+#define IDM_TAB_NEXT               1307
+#define IDM_TAB_PREV               1308
 
 #define IDM_TOOLS_OPTIONS         1401
 
