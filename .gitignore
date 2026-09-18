@@ -1,0 +1,17 @@
+# Build output
+/build/
+/out/
+
+# MSVC / Ninja artifacts
+*.obj
+*.pdb
+*.ilk
+*.exe
+*.lib
+*.exp
+*.res
+
+# Editor / OS cruft
+.vs/
+*.user
+Thumbs.db

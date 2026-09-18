@@ -1,0 +1,44 @@
+#pragma once
+
+#include <windows.h>
+#include <commctrl.h>
+#include <functional>
+#include <string>
+
+// Wraps a WC_TREEVIEW used purely for navigation (Desktop / user folders /
+// This PC / drives). Lazily populated: a directory node gets a single
+// placeholder child when created, and its real children are fetched only
+// when the node is first expanded (TVN_ITEMEXPANDING).
+class TreePane {
+public:
+    bool create(HWND parent, HINSTANCE hInstance, int controlId);
+    HWND hwnd() const { return hwnd_; }
+
+    // Handles WM_NOTIFY messages targeted at this tree. Returns a value
+    // suitable for the WndProc's LRESULT when handled.
+    LRESULT handleNotify(NMHDR* nmhdr);
+
+    // Best-effort selection sync when a file pane navigates somewhere.
+    // Only walks nodes that are already expanded/loaded - never forces
+    // enumeration of the whole tree just to find a match.
+    void trySelectPath(const std::wstring& path);
+
+    // Called when the user clicks or presses Enter on a directory node.
+    std::function<void(const std::wstring& path)> onNavigate;
+
+private:
+    struct NodeData {
+        std::wstring path;
+        bool isDummy = false;
+        bool childrenLoaded = false;
+    };
+
+    void addRootItems();
+    HTREEITEM addNode(HTREEITEM parent, const std::wstring& text, const std::wstring& path, bool likelyHasChildren);
+    void populateChildren(HTREEITEM item);
+    NodeData* dataOf(HTREEITEM item) const;
+    void navigateFromItem(HTREEITEM item);
+
+    HWND hwnd_ = nullptr;
+    HWND parentWnd_ = nullptr;
+};
