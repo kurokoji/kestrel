@@ -358,4 +358,10 @@ commit - don't let it drift out of sync with what the app actually does.
   immediately in `addRootItems` (its drive children are inserted
   synchronously right there, not lazily via `populateChildren`) so a
   later collapse+re-expand doesn't try to enumerate `kThisPcPath` as a
-  *tree* node too and duplicate them.
+  *tree* node too and duplicate them. Each drive's `FileEntry` also gets
+  `GetDiskFreeSpaceExW`'s free/total bytes - `size` is set to the total
+  (so sorting the size column by a drive means sorting by capacity, not
+  free space) and `formattedSize` is "free 空き / total". A drive that
+  isn't ready (e.g. an empty optical drive) just fails that call and
+  shows a blank size, same as any other entry the model couldn't get
+  info for - not specially handled as an error.

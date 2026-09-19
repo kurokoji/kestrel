@@ -3,6 +3,7 @@
 #include "Messages.h"
 
 #include <algorithm>
+#include <format>
 #include <memory>
 
 DirectoryModel::~DirectoryModel() {
@@ -39,6 +40,17 @@ void DirectoryModel::run(std::stop_token stopToken, std::wstring path, HWND noti
             FileEntry entry;
             entry.name = root;  // full root, not a bare name - see joinPath()
             entry.attributes = FILE_ATTRIBUTE_DIRECTORY;
+
+            ULARGE_INTEGER freeAvail{}, total{};
+            if (GetDiskFreeSpaceExW(root.c_str(), &freeAvail, &total, nullptr)) {
+                entry.size = total.QuadPart;  // so sorting by size is meaningful (drive capacity)
+                entry.formattedSize =
+                    std::format(L"{} 空き / {}", Formatting::formatSize(freeAvail.QuadPart), Formatting::formatSize(total.QuadPart));
+            }
+            // Drives that aren't ready (e.g. an empty optical drive) just
+            // fail the call above and show a blank size, same as any other
+            // entry DirectoryModel couldn't get information for.
+
             result->entries.push_back(std::move(entry));
 
             if (stopToken.stop_requested()) return;
