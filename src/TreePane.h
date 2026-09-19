@@ -3,12 +3,24 @@
 #include <windows.h>
 #include <commctrl.h>
 #include <functional>
+#include <memory>
 #include <string>
+#include <utility>
+#include <vector>
+
+// Result of a background child-folder enumeration, posted to MainWindow
+// via WM_APP_TREE_CHILDREN (lParam). Receiver owns it.
+struct TreeChildrenResult {
+    HTREEITEM item = nullptr;
+    std::vector<std::pair<std::wstring, std::wstring>> children;  // name, full path
+};
 
 // Wraps a WC_TREEVIEW used purely for navigation (Desktop / user folders /
 // This PC / drives). Lazily populated: a directory node gets a single
 // placeholder child when created, and its real children are fetched only
-// when the node is first expanded (TVN_ITEMEXPANDING).
+// when the node is first expanded (TVN_ITEMEXPANDING) - on a background
+// thread, same as FilePane/DirectoryModel, so expanding a slow (e.g.
+// network) location doesn't block the UI thread.
 class TreePane {
 public:
     bool create(HWND parent, HINSTANCE hInstance, int controlId);
@@ -17,6 +29,9 @@ public:
     // Handles WM_NOTIFY messages targeted at this tree. Returns a value
     // suitable for the WndProc's LRESULT when handled.
     LRESULT handleNotify(NMHDR* nmhdr);
+
+    // Called by MainWindow once it receives WM_APP_TREE_CHILDREN.
+    void handleChildrenResult(std::unique_ptr<TreeChildrenResult> result);
 
     // Best-effort selection sync when a file pane navigates somewhere.
     // Only walks nodes that are already expanded/loaded - never forces
@@ -38,6 +53,8 @@ private:
     void populateChildren(HTREEITEM item);
     NodeData* dataOf(HTREEITEM item) const;
     void navigateFromItem(HTREEITEM item);
+
+    static void enumerateChildrenWorker(std::wstring path, HTREEITEM item, HWND notifyWnd);
 
     HWND hwnd_ = nullptr;
     HWND parentWnd_ = nullptr;

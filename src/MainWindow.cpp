@@ -291,6 +291,11 @@ LRESULT MainWindow::wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             pane->handleDirResult(std::move(result));
             return 0;
         }
+        case WM_APP_TREE_CHILDREN: {
+            std::unique_ptr<TreeChildrenResult> result(reinterpret_cast<TreeChildrenResult*>(lParam));
+            tree_.handleChildrenResult(std::move(result));
+            return 0;
+        }
         case WM_APP_DIR_CHANGED: {
             // Debounce: a burst of filesystem events (e.g. a big copy)
             // just keeps restarting this timer, so the actual refresh

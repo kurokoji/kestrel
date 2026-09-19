@@ -23,3 +23,8 @@ inline constexpr UINT WM_APP_SELECTION_CHANGED = WM_APP + 3;
 // the other pane). wParam = the FilePane* to refresh. MainWindow debounces
 // this with a short timer rather than refreshing on every single event.
 inline constexpr UINT WM_APP_DIR_CHANGED = WM_APP + 4;
+
+// Posted by TreePane's worker thread when a node's child-folder
+// enumeration finishes. lParam = TreeChildrenResult* (owned by receiver,
+// must delete).
+inline constexpr UINT WM_APP_TREE_CHILDREN = WM_APP + 5;

@@ -156,6 +156,14 @@ commit - don't let it drift out of sync with what the app actually does.
   window may have moved, been resized, or been covered by something
   since you last measured it - re-measure fresh rather than trusting
   cached coordinates from earlier in the session.
+- For verifying a specific tree/list *action* (not a click location) -
+  e.g. "does expanding this node work" - skip pixel-coordinate clicking
+  entirely and drive the control directly: `TVM_GETNEXTITEM`
+  (`TVGN_ROOT`/`TVGN_NEXT`/`TVGN_CHILD`) to walk to the `HTREEITEM` you
+  want, then `TVM_EXPAND`/`TVE_EXPAND` on it. These pass plain handle
+  values as wParam/lParam (not pointers to marshal), so they're safe
+  cross-process the same way `WM_COMMAND` is, and far more reliable than
+  guessing where an expand glyph is on screen.
 - **Never send a pointer-bearing message (`LVM_GETITEMRECT`,
   `TCM_GETITEMRECT`, `SB_GETTEXT`, etc.) to another process's window from
   a PowerShell-side buffer.** The target process dereferences a pointer
@@ -287,3 +295,19 @@ commit - don't let it drift out of sync with what the app actually does.
   shell thumbnail's doesn't. The text-preview `Consolas` font
   (`PreviewPane::textFont_`) is now created once and reused across
   paints instead of a `CreateFontW`/`DeleteObject` pair every `WM_PAINT`.
+- `TreePane::populateChildren` enumerates a node's subfolders on a
+  background thread (`enumerateChildrenWorker`, mirroring
+  `DirectoryModel`'s pattern) instead of blocking `TVN_ITEMEXPANDINGW` -
+  a slow location (network share, etc.) no longer freezes the whole UI
+  just to expand a tree node. A "読み込み中..." placeholder child is
+  inserted synchronously so the expand still shows something immediately;
+  `handleChildrenResult` (called from `MainWindow`'s `WM_APP_TREE_CHILDREN`
+  handler) deletes that placeholder and inserts the real children once
+  the background enumeration posts its result. No request-id/staleness
+  tracking needed here (unlike `DirectoryModel`) because tree nodes are
+  never deleted during normal operation (append-only, lazily populated
+  once) and `data->childrenLoaded` is set *before* the thread is spawned,
+  so a node can never have two enumerations in flight. Verified live:
+  expanded `C:\` via a direct `TVM_EXPAND` message (more reliable than a
+  synthetic click at guessed pixel coordinates - see the testing-sandbox
+  notes above) and confirmed real subfolders replaced the placeholder.

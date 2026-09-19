@@ -1,9 +1,11 @@
 #include "TreePane.h"
 #include "IconCache.h"
+#include "Messages.h"
 
 #include <shlobj.h>
 #include <windowsx.h>
 #include <functional>
+#include <thread>
 
 namespace {
 bool isDotOrDotDot(const wchar_t* name) {
@@ -95,11 +97,23 @@ void TreePane::populateChildren(HTREEITEM item) {
     data->childrenLoaded = true;
     if (data->path.empty()) return;
 
-    std::wstring search = data->path;
+    // Placeholder so the expand shows something immediately instead of
+    // looking like it did nothing while enumeration runs in the
+    // background; handleChildrenResult() removes it once real results
+    // (or "no subfolders") arrive.
+    addNode(item, L"読み込み中...", L"", false);
+
+    std::thread(&TreePane::enumerateChildrenWorker, data->path, item, parentWnd_).detach();
+}
+
+void TreePane::enumerateChildrenWorker(std::wstring path, HTREEITEM item, HWND notifyWnd) {
+    auto result = std::make_unique<TreeChildrenResult>();
+    result->item = item;
+
+    std::wstring search = path;
     if (search.back() != L'\\') search += L'\\';
     search += L'*';
 
-    bool any = false;
     WIN32_FIND_DATAW fd{};
     HANDLE hFind = FindFirstFileExW(search.c_str(), FindExInfoBasic, &fd,
                                      FindExSearchLimitToDirectories, nullptr, 0);
@@ -109,16 +123,31 @@ void TreePane::populateChildren(HTREEITEM item) {
             if (isDotOrDotDot(fd.cFileName)) continue;
             if (fd.dwFileAttributes & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM)) continue;
 
-            std::wstring childPath = data->path;
+            std::wstring childPath = path;
             if (childPath.back() != L'\\') childPath += L'\\';
             childPath += fd.cFileName;
-            addNode(item, fd.cFileName, childPath, true);
-            any = true;
+            result->children.emplace_back(fd.cFileName, std::move(childPath));
         } while (FindNextFileW(hFind, &fd));
         FindClose(hFind);
     }
 
-    if (!any) {
+    PostMessageW(notifyWnd, WM_APP_TREE_CHILDREN, 0, reinterpret_cast<LPARAM>(result.release()));
+}
+
+void TreePane::handleChildrenResult(std::unique_ptr<TreeChildrenResult> result) {
+    const HTREEITEM item = result->item;
+
+    // Remove the "読み込み中..." placeholder populateChildren() inserted -
+    // it's always the (only) first child at this point.
+    if (HTREEITEM placeholder = TreeView_GetChild(hwnd_, item)) {
+        TreeView_DeleteItem(hwnd_, placeholder);
+    }
+
+    for (const auto& [name, childPath] : result->children) {
+        addNode(item, name, childPath, true);
+    }
+
+    if (result->children.empty()) {
         TVITEMW tvi{};
         tvi.mask = TVIF_HANDLE | TVIF_CHILDREN;
         tvi.hItem = item;
