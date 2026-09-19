@@ -571,8 +571,11 @@ void MainWindow::createMenuBar() {
     AppendMenuW(goMenu, MF_STRING, IDM_TAB_NEXT, L"次のタブ(&X)\tCtrl+Tab");
     AppendMenuW(goMenu, MF_STRING, IDM_TAB_PREV, L"前のタブ(&P)\tCtrl+Shift+Tab");
 
+    HMENU settingsMenu = CreatePopupMenu();
+    AppendMenuW(settingsMenu, MF_STRING, IDM_TOOLS_FONT, L"フォント(&F)...");
+
     HMENU toolsMenu = CreatePopupMenu();
-    AppendMenuW(toolsMenu, MF_STRING, IDM_TOOLS_FONT, L"フォント(&F)...");
+    AppendMenuW(toolsMenu, MF_POPUP, reinterpret_cast<UINT_PTR>(settingsMenu), L"設定(&S)");
 
     HMENU helpMenu = CreatePopupMenu();
     AppendMenuW(helpMenu, MF_STRING, IDM_HELP_ABOUT, L"Kestrelについて(&A)...");
