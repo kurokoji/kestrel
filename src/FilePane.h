@@ -49,6 +49,10 @@ public:
     // so MainWindow forwards WM_DRAWITEM for tabHwnd() here.
     void drawTabItem(const DRAWITEMSTRUCT& dis);
 
+    // Called by the tab strip's mouse-move/leave subclass so the close
+    // glyph under the cursor can be highlighted like a real button.
+    void setHoveredCloseTab(int index);
+
     const std::wstring& currentPath() const { return currentPath_; }
     const Stats& stats() const { return stats_; }
 
@@ -148,6 +152,7 @@ private:
 
     HWND hwnd_ = nullptr;
     HWND tabHwnd_ = nullptr;
+    int hoveredCloseTab_ = -1;  // -1 = no tab's close glyph is under the cursor
     HWND newTabButton_ = nullptr;
     HWND searchBox_ = nullptr;
     bool searchVisible_ = false;

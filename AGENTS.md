@@ -120,6 +120,19 @@ commit - don't let it drift out of sync with what the app actually does.
   happened twice during development. If you need that data, there's
   usually no safe cross-process way to get it short of `ReadProcessMemory`
   - just don't.
+- Verifying a hover state (e.g. the tab close button's hover highlight)
+  by posting a synthetic `WM_MOUSEMOVE` to a child control needs its
+  *client*-coordinate point, which means chaining safe direct API calls
+  (`GetWindowRect` + `ScreenToClient` - fine, these read via the window
+  manager, not the target's message loop) off pixel coordinates read from
+  a screenshot; small measurement error easily lands outside the target
+  rect. Confirmed `TCM_GETITEMRECT` still can't be used to get that rect
+  directly (returns failure cross-process, per the pointer-bearing
+  warning above) even though it doesn't crash. Not worth spending much
+  time chasing pixel-perfect proof of a hover repaint this way - a
+  hover/leave handler that reuses the same hit-test rect the click
+  handler already uses (so their behavior can't drift apart) is validated
+  well enough by code review plus a build.
 - If a real, previously-saved session gets restored during testing (this
   app persists open folders across runs - see Session.h), you may end up
   looking at the user's actual files/directory listings, not test data.
@@ -129,6 +142,17 @@ commit - don't let it drift out of sync with what the app actually does.
 
 ## Design decisions worth preserving
 
+- Tab strip styling (`FilePane::drawTabItem`) is deliberately flat: no
+  `DrawEdge` bevel, just a 2px navy underline (`kActiveTabAccent`) on the
+  active tab and a plain background fill otherwise - chosen over the
+  original 3D-beveled look for a lighter, more modern feel. The close
+  glyph's hover highlight (rounded rect behind the ×, via
+  `closeHoverRectFor`) is tracked in `TabStripSubclassProc` with
+  `TrackMouseEvent`/`WM_MOUSEMOVE`/`WM_MOUSELEAVE`, calling
+  `FilePane::setHoveredCloseTab` - which only invalidates the specific
+  old/new tab rects, not the whole strip. `closeHoverRectFor` deliberately
+  reuses `closeButtonRectFor` (just inflated a couple pixels) so the
+  hover highlight and the actual click hit-test can't drift apart.
 - The file-list controls use `LVS_SHOWSELALWAYS`. Without it, a
   ListView's selection isn't just dimmed when it lacks keyboard focus -
   it's fully hidden, and since Windows clears/restores focus across

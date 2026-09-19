@@ -41,13 +41,24 @@ RECT closeButtonRectFor(const RECT& tabRect) {
     return r;
 }
 
+// A couple pixels larger than the glyph itself so the hover highlight
+// reads as a real button rather than hugging the × exactly.
+RECT closeHoverRectFor(const RECT& tabRect) {
+    RECT r = closeButtonRectFor(tabRect);
+    InflateRect(&r, 2, 2);
+    return r;
+}
+
+constexpr COLORREF kActiveTabAccent = RGB(0, 0, 128);  // matches the app icon's navy
+
 // Intercepted on button-DOWN (not click/up) and swallowed when it lands on
 // a tab's close glyph, so the tab control never sees the click and never
 // changes the selection to the tab that's about to disappear.
 LRESULT CALLBACK TabStripSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR /*id*/,
                                        DWORD_PTR refData) {
+    auto* pane = reinterpret_cast<FilePane*>(refData);
+
     if (msg == WM_LBUTTONDOWN) {
-        auto* pane = reinterpret_cast<FilePane*>(refData);
         POINT pt{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
         TCHITTESTINFO hit{};
         hit.pt = pt;
@@ -61,6 +72,24 @@ LRESULT CALLBACK TabStripSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
                 return 0;
             }
         }
+    } else if (msg == WM_MOUSEMOVE) {
+        TRACKMOUSEEVENT tme{sizeof(tme), TME_LEAVE, hwnd, 0};
+        TrackMouseEvent(&tme);  // re-arm each move; harmless if already tracking
+
+        POINT pt{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+        TCHITTESTINFO hit{};
+        hit.pt = pt;
+        const int idx = TabCtrl_HitTest(hwnd, &hit);
+        int hovered = -1;
+        if (idx >= 0) {
+            RECT tabRect{};
+            TabCtrl_GetItemRect(hwnd, idx, &tabRect);
+            RECT hoverRect = closeHoverRectFor(tabRect);
+            if (PtInRect(&hoverRect, pt)) hovered = idx;
+        }
+        pane->setHoveredCloseTab(hovered);
+    } else if (msg == WM_MOUSELEAVE) {
+        pane->setHoveredCloseTab(-1);
     }
     return DefSubclassProc(hwnd, msg, wParam, lParam);
 }
@@ -430,6 +459,7 @@ void FilePane::closeTab(int index) {
     const bool closingActive = (index == activeTab_);
     tabs_.erase(tabs_.begin() + index);
     TabCtrl_DeleteItem(tabHwnd_, index);
+    hoveredCloseTab_ = -1;  // indices just shifted; next WM_MOUSEMOVE recomputes this
 
     if (closingActive) {
         const int newIndex = std::min(index, static_cast<int>(tabs_.size()) - 1);
@@ -486,6 +516,20 @@ LRESULT FilePane::handleTabNotify(NMHDR* nmhdr) {
     }
 }
 
+void FilePane::setHoveredCloseTab(int index) {
+    if (index == hoveredCloseTab_) return;
+
+    auto invalidateTab = [this](int idx) {
+        if (idx < 0) return;
+        RECT r{};
+        TabCtrl_GetItemRect(tabHwnd_, idx, &r);
+        InvalidateRect(tabHwnd_, &r, FALSE);
+    };
+    invalidateTab(hoveredCloseTab_);
+    hoveredCloseTab_ = index;
+    invalidateTab(hoveredCloseTab_);
+}
+
 void FilePane::drawTabItem(const DRAWITEMSTRUCT& dis) {
     HDC hdc = dis.hDC;
     const RECT r = dis.rcItem;
@@ -494,7 +538,13 @@ void FilePane::drawTabItem(const DRAWITEMSTRUCT& dis) {
     HBRUSH bg = CreateSolidBrush(GetSysColor(selected ? COLOR_WINDOW : COLOR_BTNFACE));
     FillRect(hdc, &r, bg);
     DeleteObject(bg);
-    DrawEdge(hdc, const_cast<RECT*>(&r), selected ? EDGE_RAISED : EDGE_ETCHED, BF_TOPLEFT | BF_BOTTOMRIGHT);
+
+    if (selected) {
+        RECT underline{r.left, r.bottom - 2, r.right, r.bottom};
+        HBRUSH accent = CreateSolidBrush(kActiveTabAccent);
+        FillRect(hdc, &underline, accent);
+        DeleteObject(accent);
+    }
 
     wchar_t buf[128] = {};
     TCITEMW item{};
@@ -514,8 +564,17 @@ void FilePane::drawTabItem(const DRAWITEMSTRUCT& dis) {
     DrawTextW(hdc, buf, -1, &textRect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 
     if (tabs_.size() > 1) {
+        const bool hovered = (static_cast<int>(dis.itemID) == hoveredCloseTab_);
+        if (hovered) {
+            RECT hoverRect = closeHoverRectFor(r);
+            HBRUSH hoverBg = CreateSolidBrush(GetSysColor(COLOR_BTNSHADOW));
+            HRGN rgn = CreateRoundRectRgn(hoverRect.left, hoverRect.top, hoverRect.right + 1, hoverRect.bottom + 1, 4, 4);
+            FillRgn(hdc, rgn, hoverBg);
+            DeleteObject(rgn);
+            DeleteObject(hoverBg);
+        }
         RECT closeRect = closeButtonRectFor(r);
-        SetTextColor(hdc, GetSysColor(COLOR_GRAYTEXT));
+        SetTextColor(hdc, GetSysColor(hovered ? COLOR_WINDOW : COLOR_GRAYTEXT));
         DrawTextW(hdc, L"×", -1, &closeRect, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOCLIP);
     }
 
