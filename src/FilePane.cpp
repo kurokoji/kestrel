@@ -59,11 +59,6 @@ LRESULT CALLBACK TabStripSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
     auto* pane = reinterpret_cast<FilePane*>(refData);
 
     if (msg == WM_LBUTTONDOWN) {
-        // Any click here - a tab, its close glyph, or empty tab-strip
-        // space - should make this the active pane, same as clicking
-        // inside its file list would.
-        pane->activate();
-
         POINT pt{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
         TCHITTESTINFO hit{};
         hit.pt = pt;
@@ -74,9 +69,21 @@ LRESULT CALLBACK TabStripSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
             RECT closeRect = closeButtonRectFor(tabRect);
             if (PtInRect(&closeRect, pt)) {
                 pane->closeTab(idx);
+                pane->activate();
                 return 0;
             }
         }
+
+        // Let the native control's own click handling run first - it sets
+        // focus to itself (tabHwnd_) as part of that, which would
+        // otherwise undo an activate() called beforehand. Reasserting
+        // focus onto the file list afterward is what actually makes this
+        // the active pane, same as clicking inside its file list would -
+        // covers a tab, empty tab-strip space, and (via the fallthrough
+        // below) TCN_SELCHANGE's own selection change.
+        const LRESULT result = DefSubclassProc(hwnd, msg, wParam, lParam);
+        pane->activate();
+        return result;
     } else if (msg == WM_MOUSEMOVE) {
         TRACKMOUSEEVENT tme{sizeof(tme), TME_LEAVE, hwnd, 0};
         TrackMouseEvent(&tme);  // re-arm each move; harmless if already tracking

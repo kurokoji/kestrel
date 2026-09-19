@@ -63,6 +63,14 @@ commit - don't let it drift out of sync with what the app actually does.
   and only then try `TVE_EXPAND`, comctl32 still refuses to expand
   because it trusted the original (wrong) hint. Cost a full debug session
   to find (see TreePane's `addRootItems` for the "This PC" node).
+- **A native control's own default click handling can steal focus back
+  after you've already set it.** `SysTabControl32` moves focus to itself
+  on `WM_LBUTTONDOWN` as part of its normal (`DefSubclassProc`) handling -
+  so calling `SetFocus` on some other window (e.g. the pane's file list,
+  to make that pane "active") *before* letting the tab control process
+  the click gets silently undone the moment `DefSubclassProc` runs. Call
+  `SetFocus` *after* `DefSubclassProc`, not before. See
+  `TabStripSubclassProc`'s `WM_LBUTTONDOWN` case / `FilePane::activate`.
 - **Don't trust `TreeView_GetSelection`/`ListView` state from inside a
   click notification** if you can avoid it - depending on internal
   drag-threshold handling, the notification can fire before the control
