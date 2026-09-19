@@ -12,6 +12,7 @@
 #include <filesystem>
 
 namespace {
+
 std::wstring joinPath(const std::wstring& dir, const std::wstring& name) {
     std::wstring full = dir;
     if (!full.empty() && full.back() != L'\\') full += L'\\';
@@ -74,13 +75,17 @@ LRESULT CALLBACK TabStripSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
             }
         }
 
-        // Let the native control's own click handling run first - it sets
-        // focus to itself (tabHwnd_) as part of that, which would
-        // otherwise undo an activate() called beforehand. Reasserting
-        // focus onto the file list afterward is what actually makes this
-        // the active pane, same as clicking inside its file list would -
-        // covers a tab, empty tab-strip space, and (via the fallthrough
-        // below) TCN_SELCHANGE's own selection change.
+        // Let the native control process the click first, then reassert
+        // focus onto the file list - this is what makes this the active
+        // pane, same as clicking inside its file list would (covers a
+        // tab, its close glyph already handled above, and empty
+        // tab-strip space). Done on both DOWN and UP defensively, since
+        // TCS_FOCUSNEVER's own focus handling isn't documented as tied to
+        // one or the other.
+        const LRESULT result = DefSubclassProc(hwnd, msg, wParam, lParam);
+        pane->activate();
+        return result;
+    } else if (msg == WM_LBUTTONUP) {
         const LRESULT result = DefSubclassProc(hwnd, msg, wParam, lParam);
         pane->activate();
         return result;

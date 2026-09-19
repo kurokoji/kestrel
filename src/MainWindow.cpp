@@ -1002,6 +1002,15 @@ void MainWindow::onLButtonDown(int x, int y) {
     } else if (PtInRect(&splitter3Rect_, pt)) {
         draggingSplitter_ = 3;
         SetCapture(hwnd_);
+    } else if (PtInRect(&leftOuterRect_, pt)) {
+        // Reaching here at all means the click landed on MainWindow's own
+        // background, not any child control - i.e. some sliver of the
+        // pane's rect (e.g. the tab strip row) isn't actually covered by
+        // tabHwnd_/newTabButton_/the list. Whatever the cause, a click
+        // anywhere in a pane's outer rect should still activate it.
+        left_.activate();
+    } else if (PtInRect(&rightOuterRect_, pt)) {
+        right_.activate();
     }
 }
 

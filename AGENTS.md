@@ -90,6 +90,22 @@ commit - don't let it drift out of sync with what the app actually does.
   Escape** if you don't swallow it - intercepting `WM_KEYDOWN` alone isn't
   enough, because `TranslateMessage` still turns it into a `WM_CHAR` your
   subclass has to also eat. See `SearchBoxSubclassProc`.
+- **A pane's tab strip can have a sliver of its rect not actually covered
+  by `tabHwnd_`/`newTabButton_`/the list** (never pinned down exactly why
+  - not reproducible via `PostMessage`-simulated clicks at any tested
+  coordinate, only via a real click on a real running window at a
+  specific screen position; possibly a DPI-rounding gap in
+  `FilePane::setBounds`'s width split between the two). A click landing
+  there goes to `MainWindow`'s own background instead of any child
+  control, so **`MainWindow::onLButtonDown` has a fallback**: after the
+  splitter checks, if the point falls in `leftOuterRect_`/
+  `rightOuterRect_` but hit none of the actual child controls, it still
+  calls that pane's `activate()`. Don't remove this thinking it's dead
+  code just because the splitter/child-control paths look like they
+  should cover everything - they don't, in a way that's hard to
+  reproduce on demand. If you ever do pin down the real gap, fix that
+  and you can probably drop this, but verify with a real mouse click
+  (not a posted message) before doing so.
 - **`TB_SETPADDING` on a toolbar only adds space *after* the label, not
   before it** - cranking it up makes buttons wider without recentering the
   text. There's no clean built-in fix for this without full owner-draw;
@@ -121,6 +137,25 @@ commit - don't let it drift out of sync with what the app actually does.
   to a button HWND, `WM_SETTEXT`/`WM_GETTEXT` (both are on Windows' short
   list of messages safely marshaled cross-process), posting `WM_COMMAND`
   for a known menu/accelerator ID, and `PrintWindow` for screenshots.
+- **`PostMessage`-ing a click straight to a specific HWND is *not*
+  equivalent to a real mouse click at that screen position** - it
+  bypasses the OS's own hit-testing entirely, so it can "work" (the
+  target genuinely receives and processes the message) even when a real
+  click at that exact spot would actually land on a different, possibly
+  invisible/overlapping window instead - `WindowFromPoint` at the real
+  screen coordinate is the only way to confirm what a real click would
+  actually hit. Chased a real bug in circles for a long time this way:
+  every synthetic test "proved" a click handler worked while a real
+  click at the same-looking spot did nothing (see the `onLButtonDown`
+  fallback gotcha above). If a user reports a click not working
+  somewhere that all your synthetic testing says should work, don't
+  trust the synthetic testing over their report.
+- Similarly, don't assume you and the user share visual context of the
+  live window: if your own coordinate probing (`GetWindowRect`,
+  `WindowFromPoint`) doesn't match what the user describes seeing, the
+  window may have moved, been resized, or been covered by something
+  since you last measured it - re-measure fresh rather than trusting
+  cached coordinates from earlier in the session.
 - **Never send a pointer-bearing message (`LVM_GETITEMRECT`,
   `TCM_GETITEMRECT`, `SB_GETTEXT`, etc.) to another process's window from
   a PowerShell-side buffer.** The target process dereferences a pointer
