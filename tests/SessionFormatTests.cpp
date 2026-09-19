@@ -24,6 +24,8 @@ TEST_CASE("serialize then parseContent round-trips a full SessionData") {
     data.leftActiveTab = 1;
     data.rightTabs = {L"D:\\baz"};
     data.rightActiveTab = 0;
+    data.leftColumnWidths = {100, 50, 60, 90};
+    data.rightColumnWidths = {200, 55, 65, 95};
 
     const std::wstring serialized = SessionFormat::serialize(data);
     const SessionData parsed = SessionFormat::parseContent(serialized);
@@ -42,6 +44,14 @@ TEST_CASE("serialize then parseContent round-trips a full SessionData") {
     CHECK(parsed.leftActiveTab == 1);
     CHECK(parsed.rightTabs == std::vector<std::wstring>{L"D:\\baz"});
     CHECK(parsed.rightActiveTab == 0);
+    CHECK(parsed.leftColumnWidths == std::array<int, 4>{100, 50, 60, 90});
+    CHECK(parsed.rightColumnWidths == std::array<int, 4>{200, 55, 65, 95});
+}
+
+TEST_CASE("parseContent falls back to default column widths when absent") {
+    const SessionData data = SessionFormat::parseContent(L"T\t0\tC:\\ok\n");
+    CHECK(data.leftColumnWidths == std::array<int, 4>{220, 70, 80, 130});
+    CHECK(data.rightColumnWidths == std::array<int, 4>{220, 70, 80, 130});
 }
 
 TEST_CASE("parseContent tolerates CRLF line endings") {

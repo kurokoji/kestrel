@@ -5,6 +5,7 @@
 #include "Types.h"
 
 #include <windows.h>
+#include <array>
 #include <commctrl.h>
 #include <cstdint>
 #include <functional>
@@ -82,6 +83,11 @@ public:
     std::vector<std::wstring> tabPaths();
     int activeTabIndex() const { return activeTab_; }
     void restoreTabs(const std::vector<std::wstring>& paths, int activeIndex);
+
+    // Name/Type/Size/Modified column widths - one ListView per pane
+    // shared across all its tabs, so this isn't per-tab state.
+    std::array<int, 4> columnWidths() const;
+    void setColumnWidths(const std::array<int, 4>& widths);
 
     // Called by MainWindow once it receives WM_APP_DIR_RESULT addressed to
     // this pane (the pane pointer travels as the message's wParam).

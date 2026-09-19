@@ -1,6 +1,7 @@
 #pragma once
 
 #include <windows.h>
+#include <array>
 #include <optional>
 #include <string>
 #include <vector>
@@ -26,6 +27,12 @@ struct SessionData {
     int leftActiveTab = 0;
     std::vector<std::wstring> rightTabs;
     int rightActiveTab = 0;
+
+    // Name/Type/Size/Modified column widths, in FilePane's column order.
+    // Each pane's ListView carries its own widths since the two panes can
+    // be resized independently already (native header drag).
+    std::array<int, 4> leftColumnWidths = {220, 70, 80, 130};
+    std::array<int, 4> rightColumnWidths = {220, 70, 80, 130};
 };
 
 namespace Session {

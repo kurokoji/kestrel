@@ -369,6 +369,9 @@ void MainWindow::saveSession() {
     data.rightTabs = right_.tabPaths();
     data.rightActiveTab = right_.activeTabIndex();
 
+    data.leftColumnWidths = left_.columnWidths();
+    data.rightColumnWidths = right_.columnWidths();
+
     Session::save(data);
 }
 
@@ -436,6 +439,9 @@ void MainWindow::onCreate() {
         activePaneId_ = pendingSession_->activePane == 1 ? 1 : 0;
         singlePaneMode_ = pendingSession_->singlePane;
         SendMessageW(toolbar_, TB_CHECKBUTTON, IDM_VIEW_SINGLEPANE, MAKELONG(singlePaneMode_ ? TRUE : FALSE, 0));
+
+        left_.setColumnWidths(pendingSession_->leftColumnWidths);
+        right_.setColumnWidths(pendingSession_->rightColumnWidths);
 
         if (!pendingSession_->leftTabs.empty()) left_.restoreTabs(pendingSession_->leftTabs, pendingSession_->leftActiveTab);
         else left_.navigate(startPath, false);

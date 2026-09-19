@@ -1,5 +1,6 @@
 #include "SessionFormat.h"
 
+#include <array>
 #include <format>
 
 namespace SessionFormat {
@@ -56,6 +57,11 @@ SessionData parseContent(const std::wstring& content) {
                     const int paneId = std::stoi(f[1]);
                     if (paneId == 0) data.leftTabs.push_back(f[2]);
                     else data.rightTabs.push_back(f[2]);
+                } else if (f[0] == L"K" && f.size() >= 6) {
+                    const int paneId = std::stoi(f[1]);
+                    std::array<int, 4> widths{std::stoi(f[2]), std::stoi(f[3]), std::stoi(f[4]), std::stoi(f[5])};
+                    if (paneId == 0) data.leftColumnWidths = widths;
+                    else data.rightColumnWidths = widths;
                 }
             } catch (...) {
                 // Malformed line (hand-edited file, corruption, a future
@@ -81,6 +87,11 @@ std::wstring serialize(const SessionData& data) {
     for (const auto& t : data.leftTabs) out += std::format(L"T\t0\t{}\n", t);
     out += std::format(L"P\t1\t{}\n", data.rightActiveTab);
     for (const auto& t : data.rightTabs) out += std::format(L"T\t1\t{}\n", t);
+
+    out += std::format(L"K\t0\t{}\t{}\t{}\t{}\n", data.leftColumnWidths[0], data.leftColumnWidths[1],
+                        data.leftColumnWidths[2], data.leftColumnWidths[3]);
+    out += std::format(L"K\t1\t{}\t{}\t{}\t{}\n", data.rightColumnWidths[0], data.rightColumnWidths[1],
+                        data.rightColumnWidths[2], data.rightColumnWidths[3]);
 
     return out;
 }

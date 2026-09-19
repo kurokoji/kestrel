@@ -489,6 +489,16 @@ void FilePane::closeTab(int index) {
     }
 }
 
+std::array<int, 4> FilePane::columnWidths() const {
+    std::array<int, 4> widths{};
+    for (int i = 0; i < 4; ++i) widths[i] = ListView_GetColumnWidth(hwnd_, i);
+    return widths;
+}
+
+void FilePane::setColumnWidths(const std::array<int, 4>& widths) {
+    for (int i = 0; i < 4; ++i) ListView_SetColumnWidth(hwnd_, i, widths[i]);
+}
+
 std::vector<std::wstring> FilePane::tabPaths() {
     syncActiveTabIntoStorage();
     std::vector<std::wstring> paths;
