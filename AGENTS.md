@@ -233,3 +233,13 @@ commit - don't let it drift out of sync with what the app actually does.
   rather than a raw `LOGFONT` blob, since `lfHeight` is DPI/device
   dependent - `chooseFont()`/the startup restore path both recompute it
   via `MulDiv(pointSize, GetDeviceCaps(hdc, LOGPIXELSY), 72)`.
+- Each tab's label gets a colored drive-letter badge (`DriveBadge::
+  driveLetterOf`/`colorForDrive`, drawn in `FilePane::drawTabItem`) -
+  color is a deterministic `(letter - 'A') % paletteSize` lookup, not
+  actually unique past 8 drives, since the goal is "tell C/D/E/F apart at
+  a glance," not a guaranteed-unique color per drive. `drawTabItem` needs
+  the tab's *path*, not just its label text (which is already just the
+  folder name via `tabLabelFor`) - for the active tab that's the live
+  `currentPath_`, for any other tab it's `tabs_[idx].path` (only synced
+  on tab switch, so reading it directly here rather than caching
+  separately is deliberate - it's always correct for non-active tabs).

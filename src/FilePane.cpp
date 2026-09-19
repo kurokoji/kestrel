@@ -1,5 +1,6 @@
 #include "FilePane.h"
 #include "Dialogs.h"
+#include "DriveBadge.h"
 #include "FileEntrySort.h"
 #include "FileOperations.h"
 #include "Formatting.h"
@@ -587,6 +588,32 @@ void FilePane::drawTabItem(const DRAWITEMSTRUCT& dis) {
     RECT textRect = r;
     textRect.left += 6;
     textRect.right -= (kCloseGlyphSize + kCloseGlyphMargin * 2);
+
+    const int idx = static_cast<int>(dis.itemID);
+    const std::wstring& tabPath = (idx == activeTab_) ? currentPath_
+                                   : (idx >= 0 && static_cast<size_t>(idx) < tabs_.size()) ? tabs_[idx].path
+                                                                                            : std::wstring{};
+    if (auto drive = DriveBadge::driveLetterOf(tabPath)) {
+        const std::wstring badgeText = std::wstring(1, *drive) + L":";
+        SIZE badgeTextSize{};
+        GetTextExtentPoint32W(hdc, badgeText.c_str(), static_cast<int>(badgeText.size()), &badgeTextSize);
+        constexpr int kBadgePadX = 5;
+        constexpr int kBadgePadY = 2;
+        RECT badgeRect{textRect.left, r.top + kBadgePadY, textRect.left + badgeTextSize.cx + kBadgePadX * 2,
+                        r.bottom - kBadgePadY};
+
+        HBRUSH badgeBrush = CreateSolidBrush(DriveBadge::colorForDrive(*drive));
+        HRGN badgeRgn = CreateRoundRectRgn(badgeRect.left, badgeRect.top, badgeRect.right + 1, badgeRect.bottom + 1, 4, 4);
+        FillRgn(hdc, badgeRgn, badgeBrush);
+        DeleteObject(badgeRgn);
+        DeleteObject(badgeBrush);
+
+        SetTextColor(hdc, RGB(30, 30, 30));  // dark text reads on every pastel badge color
+        DrawTextW(hdc, badgeText.c_str(), -1, &badgeRect, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOCLIP);
+
+        textRect.left = badgeRect.right + 4;
+    }
+
     SetTextColor(hdc, GetSysColor(COLOR_WINDOWTEXT));
     DrawTextW(hdc, buf, -1, &textRect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 
