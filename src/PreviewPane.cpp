@@ -21,6 +21,9 @@ constexpr DWORD kMaxTextPreviewFile = 512 * 1024;
 constexpr DWORD kMaxTextPreviewRead = 8192;
 constexpr uint64_t kMaxImagePreviewFile = 32ull * 1024 * 1024;
 
+constexpr UINT_PTR kLoadDebounceTimerId = 1;
+constexpr UINT kLoadDebounceMs = 150;
+
 // Result of a background loadWorker() run, posted to the preview window
 // via kPreviewResultMsg (lParam). Receiver owns it.
 struct PreviewResult {
@@ -77,7 +80,10 @@ bool loadTextFileContent(const std::wstring& path, std::wstring& outText) {
 
 }  // namespace
 
-PreviewPane::~PreviewPane() { reset(); }
+PreviewPane::~PreviewPane() {
+    reset();
+    if (textFont_) DeleteObject(textFont_);
+}
 
 bool PreviewPane::create(HWND parent, HINSTANCE hInstance, int controlId) {
     static bool registered = false;
@@ -125,6 +131,14 @@ LRESULT PreviewPane::handleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         }
         case WM_ERASEBKGND:
             return 1;  // paint() always fills the whole client rect itself
+        case WM_TIMER: {
+            if (wParam != kLoadDebounceTimerId) return DefWindowProcW(hwnd_, msg, wParam, lParam);
+            KillTimer(hwnd_, kLoadDebounceTimerId);
+            std::thread(&PreviewPane::loadWorker, pendingLoadPath_, pendingLoadExt_, pendingLoadSize_, requestId_,
+                        hwnd_)
+                .detach();
+            return 0;
+        }
         case kPreviewResultMsg: {
             std::unique_ptr<PreviewResult> result(reinterpret_cast<PreviewResult*>(lParam));
             if (result->requestId != requestId_) return 0;  // superseded by a newer selection
@@ -150,6 +164,7 @@ LRESULT PreviewPane::handleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
 }
 
 void PreviewPane::reset() {
+    KillTimer(hwnd_, kLoadDebounceTimerId);  // no-op if none is pending
     if (icon_) {
         DestroyIcon(icon_);
         icon_ = nullptr;
@@ -204,7 +219,15 @@ void PreviewPane::loadFor(const std::wstring& path) {
     loadIconFallback(path);
     detail_ = Formatting::formatSize(size);
 
-    std::thread(&PreviewPane::loadWorker, path, ext, size, requestId_, hwnd_).detach();
+    // Debounced rather than spawned right away: arrow-key/selection
+    // scrolling through a list otherwise starts (and immediately discards)
+    // a background thread per row passed through. SetTimer with the same
+    // ID just re-arms the delay on each call, so only the last selection
+    // within kLoadDebounceMs actually gets a worker thread.
+    pendingLoadPath_ = path;
+    pendingLoadExt_ = ext;
+    pendingLoadSize_ = size;
+    SetTimer(hwnd_, kLoadDebounceTimerId, kLoadDebounceMs, nullptr);
 }
 
 void PreviewPane::loadWorker(std::wstring path, std::wstring ext, uint64_t size, uint64_t requestId, HWND hwnd) {
@@ -214,8 +237,16 @@ void PreviewPane::loadWorker(std::wstring path, std::wstring ext, uint64_t size,
     result->requestId = requestId;
     result->detail = Formatting::formatSize(size);
 
-    if (FileClassify::isImageExtension(ext) && size <= kMaxImagePreviewFile) {
-        if (auto bmp = loadImageBitmap(path)) {
+    if (FileClassify::isImageExtension(ext)) {
+        // Shell thumbnail first - same cheap cached-frame source as video,
+        // costs nothing extra proportional to file size (unlike decoding
+        // the full image just to shrink it into a small preview area).
+        // Falls back to a real decode only when the shell has no
+        // thumbnail for this format, still bounded by kMaxImagePreviewFile
+        // since that path's cost does scale with the file.
+        auto bmp = loadShellThumbnailBitmap(path);
+        if (!bmp && size <= kMaxImagePreviewFile) bmp = loadImageBitmap(path);
+        if (bmp) {
             result->mode = Mode::Image;
             result->image = std::move(bmp);
         }
@@ -287,15 +318,17 @@ void PreviewPane::paint(HDC hdc, const RECT& client) {
             break;
         }
         case Mode::Text: {
-            HFONT font = CreateFontW(-13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
-                                      CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, FIXED_PITCH | FF_MODERN, L"Consolas");
-            HFONT old = static_cast<HFONT>(SelectObject(hdc, font));
+            if (!textFont_) {
+                textFont_ = CreateFontW(-13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+                                         OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
+                                         FIXED_PITCH | FF_MODERN, L"Consolas");
+            }
+            HFONT old = static_cast<HFONT>(SelectObject(hdc, textFont_));
             SetBkMode(hdc, TRANSPARENT);
             SetTextColor(hdc, GetSysColor(COLOR_WINDOWTEXT));
             RECT r{client.left + kPad, client.top + kPad, client.right - kPad, client.bottom - kPad};
             DrawTextW(hdc, textContent_.c_str(), -1, &r, DT_LEFT | DT_TOP | DT_NOPREFIX | DT_WORDBREAK | DT_EDITCONTROL);
             SelectObject(hdc, old);
-            DeleteObject(font);
             break;
         }
         case Mode::Icon: {

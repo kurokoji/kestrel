@@ -268,3 +268,22 @@ commit - don't let it drift out of sync with what the app actually does.
   the entry's own strings from `LVN_GETDISPINFOW` (no per-cell
   `std::wstring` copy either) - this is a perf-only change with no
   behavior difference, verified with a live directory listing.
+- `PreviewPane`'s actual load (image decode/shell thumbnail/text read) is
+  debounced via `SetTimer`/`kLoadDebounceMs`, not spawned immediately from
+  `loadFor()`. Arrow-key/selection scrolling through a list previously
+  spawned-and-immediately-discarded a background thread (with its own
+  `CoInitializeEx`) per row passed through. `SetTimer` with the same timer
+  ID just re-arms the delay on each call - only the last selection within
+  the debounce window actually gets a worker thread. The cheap immediate
+  part (icon fallback + size) still happens synchronously in `loadFor()`
+  itself, unchanged, so the preview never looks like it's lagging on a
+  single selection. `reset()` also kills any pending timer, so clearing
+  the selection (empty path) can't fire a stale load afterward.
+  Image files now try `loadShellThumbnailBitmap` first (the same
+  cached-frame source video already used) before falling back to a real
+  GDI+ decode (`loadImageBitmap`, still bounded by
+  `kMaxImagePreviewFile`) - a full decode's cost scales with the source
+  file's resolution even though the preview area is small, while the
+  shell thumbnail's doesn't. The text-preview `Consolas` font
+  (`PreviewPane::textFont_`) is now created once and reused across
+  paints instead of a `CreateFontW`/`DeleteObject` pair every `WM_PAINT`.

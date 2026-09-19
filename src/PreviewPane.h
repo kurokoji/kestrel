@@ -51,4 +51,18 @@ private:
     std::unique_ptr<Gdiplus::Bitmap> image_;
     HICON icon_ = nullptr;
     uint64_t requestId_ = 0;
+
+    // The actual decode/thumbnail/read is debounced (via a timer, reset on
+    // every showPreview() call) rather than spawned immediately - arrow-key
+    // scrolling through a list otherwise starts and immediately discards a
+    // background thread per row. Only the cheap icon+size shown by loadFor()
+    // itself is immediate. These hold the most recent call's parameters for
+    // whenever the timer actually fires.
+    std::wstring pendingLoadPath_;
+    std::wstring pendingLoadExt_;
+    uint64_t pendingLoadSize_ = 0;
+
+    // Lazily created, reused across paints instead of a CreateFontW/
+    // DeleteObject pair on every WM_PAINT while showing a text preview.
+    HFONT textFont_ = nullptr;
 };
