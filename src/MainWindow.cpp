@@ -487,6 +487,10 @@ void MainWindow::onCreate() {
     left_.onSearchVisibilityChanged = onSearchVisibility;
     right_.onSearchVisibilityChanged = onSearchVisibility;
 
+    auto onTabCountChanged = [this] { layoutChildren(); };
+    left_.onTabCountChanged = onTabCountChanged;
+    right_.onTabCountChanged = onTabCountChanged;
+
     std::wstring startPath = L"C:\\";
     PWSTR profile = nullptr;
     if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Profile, 0, nullptr, &profile))) {

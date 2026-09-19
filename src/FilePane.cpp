@@ -147,9 +147,14 @@ bool FilePane::create(HWND parent, HINSTANCE hInstance, int controlId, int paneI
     // TCS_FOCUSNEVER so clicking a tab doesn't steal keyboard focus away
     // from the list - matches how browser tab strips behave.
     // TCS_OWNERDRAWFIXED so each tab can paint its own close ("x") glyph.
+    // TCS_MULTILINE so once tabs no longer fit one row, they wrap onto
+    // additional rows instead of the default scroll-arrow behavior -
+    // setBounds() sizes the control's height to match however many rows
+    // that ends up being.
     tabHwnd_ = CreateWindowExW(0, WC_TABCONTROLW, L"",
-                                WS_CHILD | WS_VISIBLE | TCS_FOCUSNEVER | TCS_TOOLTIPS | TCS_OWNERDRAWFIXED, 0, 0, 0, 0,
-                                parent, nullptr, hInstance, nullptr);
+                                WS_CHILD | WS_VISIBLE | TCS_FOCUSNEVER | TCS_TOOLTIPS | TCS_OWNERDRAWFIXED |
+                                    TCS_MULTILINE,
+                                0, 0, 0, 0, parent, nullptr, hInstance, nullptr);
     SendMessageW(tabHwnd_, WM_SETFONT, reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)), TRUE);
     TabCtrl_SetMinTabWidth(tabHwnd_, 120);  // room for a readable label plus the close glyph
 
@@ -216,10 +221,17 @@ void FilePane::setBounds(const RECT& outer) {
     const int w = outer.right - outer.left;
     const int tabStripW = std::max(0, w - kNewTabButtonWidth);
 
+    // TCS_MULTILINE wraps onto more rows as needed, but only figures out
+    // how many once it knows its actual width - so size it once at a
+    // single row's height first, ask how many rows that produced, then
+    // resize to fit them all.
     MoveWindow(tabHwnd_, outer.left, outer.top, tabStripW, kTabStripHeight, TRUE);
+    const int tabRows = std::max(1, TabCtrl_GetRowCount(tabHwnd_));
+    const int tabStripHeight = tabRows * kTabStripHeight;
+    MoveWindow(tabHwnd_, outer.left, outer.top, tabStripW, tabStripHeight, TRUE);
     MoveWindow(newTabButton_, outer.left + tabStripW, outer.top, kNewTabButtonWidth, kTabStripHeight, TRUE);
 
-    int listTop = outer.top + kTabStripHeight;
+    int listTop = outer.top + tabStripHeight;
     if (searchVisible_) {
         MoveWindow(searchBox_, outer.left, listTop, w, kSearchBoxHeight, TRUE);
         listTop += kSearchBoxHeight;
@@ -467,6 +479,7 @@ void FilePane::newTab() {
     TabCtrl_SetCurSel(tabHwnd_, newIndex);
 
     loadTabIntoLive(newIndex);  // starts empty, so this also kicks off the enumeration
+    if (onTabCountChanged) onTabCountChanged();
 }
 
 void FilePane::closeTab(int index) {
@@ -488,6 +501,7 @@ void FilePane::closeTab(int index) {
         --activeTab_;  // a tab before the active one shifted left
         TabCtrl_SetCurSel(tabHwnd_, activeTab_);
     }
+    if (onTabCountChanged) onTabCountChanged();
 }
 
 std::array<int, 4> FilePane::columnWidths() const {

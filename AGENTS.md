@@ -243,3 +243,17 @@ commit - don't let it drift out of sync with what the app actually does.
   `currentPath_`, for any other tab it's `tabs_[idx].path` (only synced
   on tab switch, so reading it directly here rather than caching
   separately is deliberate - it's always correct for non-active tabs).
+- The tab strip is `TCS_MULTILINE`: once tabs stop fitting one row, they
+  wrap onto more rows instead of showing scroll arrows (explicitly
+  requested over the scroll-arrow behavior). `TCS_MULTILINE` only knows
+  how many rows it needs *after* it's been sized at its actual width, so
+  `FilePane::setBounds` moves the control once at a single row's height
+  first, reads `TabCtrl_GetRowCount`, then resizes to
+  `rows * kTabStripHeight` - a single `MoveWindow` call can't do this in
+  one step. Because the row count (and therefore how much vertical space
+  the list below it gets) can change whenever a tab is added or removed,
+  `FilePane::newTab`/`closeTab` fire a new `onTabCountChanged` callback
+  that `MainWindow` wires to `layoutChildren()`, the same way
+  `onSearchVisibilityChanged` already worked for the search box's row.
+  `restoreTabs()` doesn't need its own trigger since `onCreate()` already
+  calls `layoutChildren()` unconditionally right after using it.

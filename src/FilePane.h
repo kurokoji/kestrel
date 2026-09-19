@@ -139,6 +139,13 @@ public:
     std::function<void(FilePane&)> onFocusChanged;
     std::function<void()> onSearchVisibilityChanged;
 
+    // Fired after a tab is added or removed - the tab strip is
+    // TCS_MULTILINE, so the number of rows (and therefore how much
+    // height setBounds() needs to give it) can change with the tab
+    // count. MainWindow re-runs layoutChildren() on this same as it does
+    // for onSearchVisibilityChanged.
+    std::function<void()> onTabCountChanged;
+
 private:
     struct TabState {
         std::wstring path;
