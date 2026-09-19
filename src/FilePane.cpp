@@ -16,6 +16,11 @@
 namespace {
 
 std::wstring joinPath(const std::wstring& dir, const std::wstring& name) {
+    // The This-PC view's entries are already full drive roots ("C:\"),
+    // not names relative to a real containing folder - kThisPcPath itself
+    // isn't a real path to prepend.
+    if (dir == kThisPcPath) return name;
+
     std::wstring full = dir;
     if (!full.empty() && full.back() != L'\\') full += L'\\';
     full += name;

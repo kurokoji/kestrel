@@ -1,6 +1,7 @@
 #include "TreePane.h"
 #include "IconCache.h"
 #include "Messages.h"
+#include "Types.h"
 
 #include <shlobj.h>
 #include <windowsx.h>
@@ -76,7 +77,15 @@ void TreePane::addRootItems() {
     // TVE_EXPAND on that hint, not just on whether child items actually
     // exist yet, so inserting the real drive nodes below and expanding
     // wouldn't otherwise show anything.
-    HTREEITEM thisPC = addNode(nullptr, L"PC", L"", true);
+    // kThisPcPath (not empty) so clicking "PC" itself navigates the active
+    // pane to a synthetic drive listing (DirectoryModel special-cases
+    // this path) - matching what other file managers do for "This PC".
+    HTREEITEM thisPC = addNode(nullptr, L"PC", kThisPcPath, true);
+    // Its children (the drives) are added right here, synchronously, not
+    // lazily via populateChildren - mark them already-loaded so a later
+    // collapse+re-expand doesn't try to enumerate kThisPcPath as a tree
+    // node too and duplicate them.
+    dataOf(thisPC)->childrenLoaded = true;
 
     const DWORD drives = GetLogicalDrives();
     for (int i = 0; i < 26; ++i) {

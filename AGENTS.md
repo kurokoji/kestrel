@@ -165,11 +165,18 @@ commit - don't let it drift out of sync with what the app actually does.
   cross-process the same way `WM_COMMAND` is, and far more reliable than
   guessing where an expand glyph is on screen.
 - **Never send a pointer-bearing message (`LVM_GETITEMRECT`,
-  `TCM_GETITEMRECT`, `SB_GETTEXT`, etc.) to another process's window from
-  a PowerShell-side buffer.** The target process dereferences a pointer
-  that's only valid in *your* process's address space and crashes. This
-  happened twice during development. If you need that data, there's
-  usually no safe cross-process way to get it short of `ReadProcessMemory`
+  `TCM_GETITEMRECT`, `SB_GETTEXT`, `LVM_SETITEMSTATE`, etc.) to another
+  process's window from a PowerShell-side buffer.** The target process
+  dereferences a pointer that's only valid in *your* process's address
+  space and crashes. This happened three times during development
+  (`LVM_SETITEMSTATE` with a `Marshal.AllocHGlobal`'d `LVITEM`, while
+  trying to select+activate a list row to test drive navigation, crashed
+  the whole app outright). Don't assume a message is handle-only just
+  because it *looks* like the flag-based ones (`TVM_EXPAND`,
+  `TVM_SELECTITEM`) that are actually safe - check whether its lParam is
+  documented as a pointer to a struct before sending it cross-process.
+  If you need that data, there's usually no safe cross-process way short
+  of `ReadProcessMemory`
   - just don't.
 - Verifying a hover state (e.g. the tab close button's hover highlight)
   by posting a synthetic `WM_MOUSEMOVE` to a child control needs its
@@ -333,3 +340,22 @@ commit - don't let it drift out of sync with what the app actually does.
   (tab background, close-hover) switched to `GetSysColorBrush` (owned by
   the system, no delete needed, and it stays correct if the user changes
   their color scheme, unlike a one-time cache would).
+- Clicking the tree's "PC" node navigates the active pane to a synthetic
+  drive listing (C:\, D:\, ...), matching what other file managers do.
+  It's keyed off `kThisPcPath` (`Types.h`) - the shell's own
+  `::{20D04FE0-3AEA-1069-A2D8-08002B30309D}` CLSID string for the
+  virtual "This PC" namespace root, reused here purely as a sentinel
+  value (not resolved via the shell in any way) so it reads as
+  intentional rather than garbage if it ever shows up somewhere visible
+  like the address bar - which it does, exactly like Explorer's own
+  address bar would show it. `DirectoryModel::run` special-cases this
+  path to enumerate drives via `GetLogicalDrives()` instead of
+  `FindFirstFileExW`. `FilePane`'s `joinPath()` special-cases it too:
+  entries under it are already full drive roots ("C:\"), not names
+  relative to a real containing folder, so the normal
+  dir-plus-backslash-plus-name concatenation would double them up
+  wrong. The "PC" tree node itself gets `childrenLoaded = true` set
+  immediately in `addRootItems` (its drive children are inserted
+  synchronously right there, not lazily via `populateChildren`) so a
+  later collapse+re-expand doesn't try to enumerate `kThisPcPath` as a
+  *tree* node too and duplicate them.

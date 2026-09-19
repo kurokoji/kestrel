@@ -28,6 +28,26 @@ void DirectoryModel::run(std::stop_token stopToken, std::wstring path, HWND noti
     result->requestId = requestId;
     result->path = path;
 
+    if (path == kThisPcPath) {
+        const DWORD drives = GetLogicalDrives();
+        for (int i = 0; i < 26; ++i) {
+            if (!(drives & (1u << i))) continue;
+            std::wstring root = {static_cast<wchar_t>(L'A' + i), L':', L'\\'};
+            const UINT type = GetDriveTypeW(root.c_str());
+            if (type == DRIVE_UNKNOWN || type == DRIVE_NO_ROOT_DIR) continue;
+
+            FileEntry entry;
+            entry.name = root;  // full root, not a bare name - see joinPath()
+            entry.attributes = FILE_ATTRIBUTE_DIRECTORY;
+            result->entries.push_back(std::move(entry));
+
+            if (stopToken.stop_requested()) return;
+        }
+        result->success = true;
+        PostMessageW(notifyWnd, WM_APP_DIR_RESULT, token, reinterpret_cast<LPARAM>(result.release()));
+        return;
+    }
+
     std::wstring searchPath = path;
     if (!searchPath.empty() && searchPath.back() != L'\\') {
         searchPath += L'\\';
