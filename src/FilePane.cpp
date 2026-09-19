@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <unordered_map>
 
 namespace {
 
@@ -52,6 +53,19 @@ RECT closeHoverRectFor(const RECT& tabRect) {
 }
 
 constexpr COLORREF kActiveTabAccent = RGB(0, 0, 128);  // matches the app icon's navy
+
+// drawTabItem() paints on every WM_DRAWITEM for the tab strip, so brushes
+// for its handful of fixed custom colors (the active-tab underline, each
+// drive badge color) are cached here instead of Create/Delete per paint.
+// Bounded to a small, fixed set of colors (kActiveTabAccent + the
+// DriveBadge palette) - intentionally never freed, same as a process-wide
+// GetSysColorBrush.
+HBRUSH cachedBrushFor(COLORREF color) {
+    static std::unordered_map<COLORREF, HBRUSH> cache;
+    auto [it, inserted] = cache.try_emplace(color, nullptr);
+    if (inserted) it->second = CreateSolidBrush(color);
+    return it->second;
+}
 
 // Intercepted on button-DOWN (not click/up) and swallowed when it lands on
 // a tab's close glyph, so the tab control never sees the click and never
@@ -577,15 +591,11 @@ void FilePane::drawTabItem(const DRAWITEMSTRUCT& dis) {
     const RECT r = dis.rcItem;
     const bool selected = (dis.itemState & ODS_SELECTED) != 0;
 
-    HBRUSH bg = CreateSolidBrush(GetSysColor(selected ? COLOR_WINDOW : COLOR_BTNFACE));
-    FillRect(hdc, &r, bg);
-    DeleteObject(bg);
+    FillRect(hdc, &r, GetSysColorBrush(selected ? COLOR_WINDOW : COLOR_BTNFACE));
 
     if (selected) {
         RECT underline{r.left, r.bottom - 2, r.right, r.bottom};
-        HBRUSH accent = CreateSolidBrush(kActiveTabAccent);
-        FillRect(hdc, &underline, accent);
-        DeleteObject(accent);
+        FillRect(hdc, &underline, cachedBrushFor(kActiveTabAccent));
     }
 
     wchar_t buf[128] = {};
@@ -616,11 +626,9 @@ void FilePane::drawTabItem(const DRAWITEMSTRUCT& dis) {
         RECT badgeRect{textRect.left, r.top + kBadgePadY, textRect.left + badgeTextSize.cx + kBadgePadX * 2,
                         r.bottom - kBadgePadY};
 
-        HBRUSH badgeBrush = CreateSolidBrush(DriveBadge::colorForDrive(*drive));
         HRGN badgeRgn = CreateRoundRectRgn(badgeRect.left, badgeRect.top, badgeRect.right + 1, badgeRect.bottom + 1, 4, 4);
-        FillRgn(hdc, badgeRgn, badgeBrush);
+        FillRgn(hdc, badgeRgn, cachedBrushFor(DriveBadge::colorForDrive(*drive)));
         DeleteObject(badgeRgn);
-        DeleteObject(badgeBrush);
 
         SetTextColor(hdc, RGB(30, 30, 30));  // dark text reads on every pastel badge color
         DrawTextW(hdc, badgeText.c_str(), -1, &badgeRect, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOCLIP);
@@ -635,11 +643,9 @@ void FilePane::drawTabItem(const DRAWITEMSTRUCT& dis) {
         const bool hovered = (static_cast<int>(dis.itemID) == hoveredCloseTab_);
         if (hovered) {
             RECT hoverRect = closeHoverRectFor(r);
-            HBRUSH hoverBg = CreateSolidBrush(GetSysColor(COLOR_BTNSHADOW));
             HRGN rgn = CreateRoundRectRgn(hoverRect.left, hoverRect.top, hoverRect.right + 1, hoverRect.bottom + 1, 4, 4);
-            FillRgn(hdc, rgn, hoverBg);
+            FillRgn(hdc, rgn, GetSysColorBrush(COLOR_BTNSHADOW));
             DeleteObject(rgn);
-            DeleteObject(hoverBg);
         }
         RECT closeRect = closeButtonRectFor(r);
         SetTextColor(hdc, GetSysColor(hovered ? COLOR_WINDOW : COLOR_GRAYTEXT));

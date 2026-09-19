@@ -45,7 +45,6 @@ void DirectoryModel::run(std::stop_token stopToken, std::wstring path, HWND noti
     }
 
     result->entries.reserve(256);
-    size_t sinceCheck = 0;
     do {
         if (wcscmp(findData.cFileName, L".") == 0 || wcscmp(findData.cFileName, L"..") == 0) {
             continue;
@@ -68,13 +67,15 @@ void DirectoryModel::run(std::stop_token stopToken, std::wstring path, HWND noti
         result->entries.push_back(std::move(entry));
 
         // Cooperative cancellation: bail without posting if a newer
-        // navigation has already superseded this enumeration.
-        if (++sinceCheck >= 256) {
-            sinceCheck = 0;
-            if (stopToken.stop_requested()) {
-                FindClose(hFind);
-                return;
-            }
+        // navigation has already superseded this enumeration. Checked
+        // every iteration (an atomic load) rather than batched, since
+        // requestEnumeration() joins the previous worker synchronously on
+        // the UI thread - on a slow (e.g. network) share, each
+        // FindNextFileW call can itself take long enough that batching
+        // this check made cancellation (and therefore that join) laggy.
+        if (stopToken.stop_requested()) {
+            FindClose(hFind);
+            return;
         }
     } while (FindNextFileW(hFind, &findData));
 

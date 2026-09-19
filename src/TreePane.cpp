@@ -4,12 +4,18 @@
 
 #include <shlobj.h>
 #include <windowsx.h>
+#include <algorithm>
 #include <functional>
 #include <thread>
 
 namespace {
 bool isDotOrDotDot(const wchar_t* name) {
     return name[0] == L'.' && (name[1] == 0 || (name[1] == L'.' && name[2] == 0));
+}
+
+std::wstring lowerCopy(std::wstring s) {
+    std::ranges::transform(s, s.begin(), ::towlower);
+    return s;
 }
 }  // namespace
 
@@ -46,7 +52,9 @@ HTREEITEM TreePane::addNode(HTREEITEM parent, const std::wstring& text, const st
     tvis.item.cChildren = likelyHasChildren ? 1 : 0;
     tvis.item.iImage = icon;
     tvis.item.iSelectedImage = icon;
-    return TreeView_InsertItem(hwnd_, &tvis);
+    const HTREEITEM item = TreeView_InsertItem(hwnd_, &tvis);
+    if (!path.empty()) pathIndex_[lowerCopy(path)] = item;
+    return item;
 }
 
 void TreePane::addRootItems() {
@@ -176,7 +184,9 @@ LRESULT TreePane::handleNotify(NMHDR* nmhdr) {
         }
         case TVN_DELETEITEMW: {
             auto* nmtv = reinterpret_cast<NMTREEVIEWW*>(nmhdr);
-            delete reinterpret_cast<NodeData*>(nmtv->itemOld.lParam);
+            auto* data = reinterpret_cast<NodeData*>(nmtv->itemOld.lParam);
+            if (data && !data->path.empty()) pathIndex_.erase(lowerCopy(data->path));
+            delete data;
             return 0;
         }
         case NM_CLICK:
@@ -217,26 +227,13 @@ LRESULT TreePane::handleNotify(NMHDR* nmhdr) {
 }
 
 void TreePane::trySelectPath(const std::wstring& path) {
-    HTREEITEM best = nullptr;
+    // pathIndex_ only has nodes that have actually been inserted (i.e.
+    // already-expanded/loaded ancestors) - a path under a never-expanded
+    // node simply won't be found, matching the existing "best-effort,
+    // never force enumeration" contract.
+    const auto it = pathIndex_.find(lowerCopy(path));
+    if (it == pathIndex_.end()) return;
 
-    std::function<bool(HTREEITEM)> walk = [&](HTREEITEM item) -> bool {
-        while (item) {
-            NodeData* data = dataOf(item);
-            if (data && !data->path.empty() && _wcsicmp(data->path.c_str(), path.c_str()) == 0) {
-                best = item;
-                return true;
-            }
-            if (HTREEITEM child = TreeView_GetChild(hwnd_, item)) {
-                if (walk(child)) return true;
-            }
-            item = TreeView_GetNextSibling(hwnd_, item);
-        }
-        return false;
-    };
-
-    walk(TreeView_GetRoot(hwnd_));
-    if (best) {
-        TreeView_SelectItem(hwnd_, best);
-        TreeView_EnsureVisible(hwnd_, best);
-    }
+    TreeView_SelectItem(hwnd_, it->second);
+    TreeView_EnsureVisible(hwnd_, it->second);
 }

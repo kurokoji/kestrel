@@ -311,3 +311,25 @@ commit - don't let it drift out of sync with what the app actually does.
   expanded `C:\` via a direct `TVM_EXPAND` message (more reliable than a
   synthetic click at guessed pixel coordinates - see the testing-sandbox
   notes above) and confirmed real subfolders replaced the placeholder.
+- `TreePane::trySelectPath` (called on every navigation, from
+  `refreshUiForActivePane`) does an O(1) lookup into `pathIndex_`
+  (lower-cased path -> `HTREEITEM`, maintained in `addNode`/
+  `TVN_DELETEITEMW`) instead of walking the whole tree with
+  `TreeView_GetChild`/`GetNextSibling` recursion every time - only
+  matters once you have a lot of expanded nodes, but the walk was pure
+  overhead on every single navigation regardless. Still only ever finds
+  already-expanded/loaded nodes (the "best-effort, never force
+  enumeration" contract is unchanged) - a path just isn't in the index if
+  its node was never inserted. `DirectoryModel::run`'s cancellation check
+  (`stopToken.stop_requested()`) is now every loop iteration instead of
+  batched every 256 entries - `requestEnumeration()` joins the previous
+  worker synchronously on the UI thread, and on a slow (e.g. network)
+  share each `FindNextFileW` call can itself be slow enough that the old
+  batching made that join noticeably laggy. `FilePane::drawTabItem`'s
+  brushes for its handful of fixed custom colors (`kActiveTabAccent`, the
+  `DriveBadge` palette) are now cached (`cachedBrushFor`, a small
+  process-lifetime `COLORREF -> HBRUSH` map) instead of
+  `CreateSolidBrush`/`DeleteObject` per paint; the system-color ones
+  (tab background, close-hover) switched to `GetSysColorBrush` (owned by
+  the system, no delete needed, and it stays correct if the user changes
+  their color scheme, unlike a one-time cache would).

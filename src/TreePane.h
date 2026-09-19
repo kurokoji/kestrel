@@ -5,6 +5,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -58,4 +59,11 @@ private:
 
     HWND hwnd_ = nullptr;
     HWND parentWnd_ = nullptr;
+
+    // Maps a lower-cased path to the node for it, maintained alongside
+    // addNode()/TVN_DELETEITEMW so trySelectPath() (called on every
+    // navigation) doesn't need to walk the whole tree looking for a
+    // match - paths are Windows-path-case-insensitive, hence lower-casing
+    // the key rather than using _wcsicmp per node during a walk.
+    std::unordered_map<std::wstring, HTREEITEM> pathIndex_;
 };
