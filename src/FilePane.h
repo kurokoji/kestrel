@@ -41,6 +41,13 @@ public:
     HWND searchBoxHwnd() const { return searchBox_; }
     int paneId() const { return paneId_; }
 
+    // Makes this the active pane by moving keyboard focus to its list
+    // (which is what onFocusChanged/NM_SETFOCUS actually keys off of).
+    // Called when clicking the tab strip - tabs, empty tab-strip space, or
+    // the "+" button - of a pane that isn't currently active, so it
+    // doesn't take a click inside the file list itself to switch panes.
+    void activate() { SetFocus(hwnd_); }
+
     // Positions the tab strip and the ListView within `outer` (the pane's
     // allocated rect, already inset for the active-pane highlight frame).
     void setBounds(const RECT& outer);

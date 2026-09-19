@@ -869,10 +869,12 @@ void MainWindow::showShellContextMenuForItems(FilePane& pane, const std::vector<
 
 void MainWindow::onCommand(int id, HWND ctrl) {
     if (ctrl && ctrl == left_.newTabButtonHwnd()) {
+        left_.activate();
         left_.newTab();
         return;
     }
     if (ctrl && ctrl == right_.newTabButtonHwnd()) {
+        right_.activate();
         right_.newTab();
         return;
     }
