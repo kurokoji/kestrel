@@ -594,7 +594,7 @@ void FilePane::drawTabItem(const DRAWITEMSTRUCT& dis) {
                                    : (idx >= 0 && static_cast<size_t>(idx) < tabs_.size()) ? tabs_[idx].path
                                                                                             : std::wstring{};
     if (auto drive = DriveBadge::driveLetterOf(tabPath)) {
-        const std::wstring badgeText = std::wstring(1, *drive) + L":";
+        const std::wstring badgeText(1, *drive);
         SIZE badgeTextSize{};
         GetTextExtentPoint32W(hdc, badgeText.c_str(), static_cast<int>(badgeText.size()), &badgeTextSize);
         constexpr int kBadgePadX = 5;
