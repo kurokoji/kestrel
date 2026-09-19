@@ -1,4 +1,5 @@
 #include "DirectoryModel.h"
+#include "Formatting.h"
 #include "Messages.h"
 
 #include <algorithm>
@@ -61,7 +62,9 @@ void DirectoryModel::run(std::stop_token stopToken, std::wstring path, HWND noti
                 entry.extension = entry.name.substr(dot);
                 std::ranges::transform(entry.extension, entry.extension.begin(), ::towlower);
             }
+            entry.formattedSize = Formatting::formatSize(entry.size);
         }
+        entry.formattedModified = Formatting::formatFileTime(entry.modified);
         result->entries.push_back(std::move(entry));
 
         // Cooperative cancellation: bail without posting if a newer

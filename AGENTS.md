@@ -257,3 +257,14 @@ commit - don't let it drift out of sync with what the app actually does.
   `onSearchVisibilityChanged` already worked for the search box's row.
   `restoreTabs()` doesn't need its own trigger since `onCreate()` already
   calls `layoutChildren()` unconditionally right after using it.
+- `FileEntry` carries pre-formatted `formattedSize`/`formattedModified`
+  strings, computed once in `DirectoryModel::run` (on its background
+  thread) rather than in `FilePane`'s `LVN_GETDISPINFOW` handler. That
+  handler fires on every row the list paints - including every frame
+  while scrolling a large directory - so calling `Formatting::formatSize`/
+  `formatFileTime` (each doing a `std::format` heap allocation) there
+  meant reformatting the same unchanging value repeatedly. Format once
+  when the entry is created instead, and hand out `const wchar_t*` into
+  the entry's own strings from `LVN_GETDISPINFOW` (no per-cell
+  `std::wstring` copy either) - this is a perf-only change with no
+  behavior difference, verified with a live directory listing.

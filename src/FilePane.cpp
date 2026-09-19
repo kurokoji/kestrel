@@ -739,15 +739,21 @@ LRESULT FilePane::handleNotify(NMHDR* nmhdr) {
             const FileEntry& e = entries_[idx];
 
             if (di->item.mask & LVIF_TEXT) {
-                std::wstring text;
+                // Points straight at each FileEntry's own (already-formatted,
+                // for size/date) strings rather than building a fresh
+                // std::wstring per cell - this runs on every row the list
+                // paints, including while scrolling a large directory.
+                const wchar_t* text = L"";
                 switch (di->item.iSubItem) {
-                    case 0: text = e.name; break;
-                    case 1: text = e.isDirectory() ? L"フォルダー" : (e.extension.empty() ? L"ファイル" : e.extension); break;
-                    case 2: text = e.isDirectory() ? L"" : Formatting::formatSize(e.size); break;
-                    case 3: text = Formatting::formatFileTime(e.modified); break;
+                    case 0: text = e.name.c_str(); break;
+                    case 1:
+                        text = e.isDirectory() ? L"フォルダー" : (e.extension.empty() ? L"ファイル" : e.extension.c_str());
+                        break;
+                    case 2: text = e.formattedSize.c_str(); break;
+                    case 3: text = e.formattedModified.c_str(); break;
                     default: break;
                 }
-                wcsncpy_s(di->item.pszText, di->item.cchTextMax, text.c_str(), _TRUNCATE);
+                wcsncpy_s(di->item.pszText, di->item.cchTextMax, text, _TRUNCATE);
             }
             if (di->item.mask & LVIF_IMAGE) {
                 di->item.iImage = e.isDirectory() ? IconCache::instance().iconForDirectory()
