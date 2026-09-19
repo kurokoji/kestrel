@@ -572,7 +572,7 @@ void MainWindow::createMenuBar() {
     AppendMenuW(goMenu, MF_STRING, IDM_TAB_PREV, L"前のタブ(&P)\tCtrl+Shift+Tab");
 
     HMENU toolsMenu = CreatePopupMenu();
-    AppendMenuW(toolsMenu, MF_STRING, IDM_TOOLS_OPTIONS, L"オプション(&O)...");
+    AppendMenuW(toolsMenu, MF_STRING, IDM_TOOLS_FONT, L"フォント(&F)...");
 
     HMENU helpMenu = CreatePopupMenu();
     AppendMenuW(helpMenu, MF_STRING, IDM_HELP_ABOUT, L"Kestrelについて(&A)...");
@@ -1053,7 +1053,7 @@ void MainWindow::onCommand(int id, HWND ctrl) {
             activePane().cycleTab(false);
             break;
 
-        case IDM_TOOLS_OPTIONS:
+        case IDM_TOOLS_FONT:
             chooseFont();
             break;
         case IDM_HELP_ABOUT:

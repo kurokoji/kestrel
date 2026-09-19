@@ -31,7 +31,7 @@
 #define IDM_TAB_NEXT               1307
 #define IDM_TAB_PREV               1308
 
-#define IDM_TOOLS_OPTIONS         1401
+#define IDM_TOOLS_FONT             1401
 
 #define IDM_HELP_ABOUT             1501
 
