@@ -26,6 +26,9 @@ TEST_CASE("serialize then parseContent round-trips a full SessionData") {
     data.rightActiveTab = 0;
     data.leftColumnWidths = {100, 50, 60, 90};
     data.rightColumnWidths = {200, 55, 65, 95};
+    data.fontFamily = L"Consolas";
+    data.fontSize = 11;
+    data.fontBold = true;
 
     const std::wstring serialized = SessionFormat::serialize(data);
     const SessionData parsed = SessionFormat::parseContent(serialized);
@@ -46,12 +49,22 @@ TEST_CASE("serialize then parseContent round-trips a full SessionData") {
     CHECK(parsed.rightActiveTab == 0);
     CHECK(parsed.leftColumnWidths == std::array<int, 4>{100, 50, 60, 90});
     CHECK(parsed.rightColumnWidths == std::array<int, 4>{200, 55, 65, 95});
+    CHECK(parsed.fontFamily == L"Consolas");
+    CHECK(parsed.fontSize == 11);
+    CHECK(parsed.fontBold == true);
 }
 
 TEST_CASE("parseContent falls back to default column widths when absent") {
     const SessionData data = SessionFormat::parseContent(L"T\t0\tC:\\ok\n");
     CHECK(data.leftColumnWidths == std::array<int, 4>{220, 70, 80, 130});
     CHECK(data.rightColumnWidths == std::array<int, 4>{220, 70, 80, 130});
+}
+
+TEST_CASE("parseContent falls back to no font override when absent") {
+    const SessionData data = SessionFormat::parseContent(L"T\t0\tC:\\ok\n");
+    CHECK(data.fontFamily == L"");
+    CHECK(data.fontSize == 0);
+    CHECK(data.fontBold == false);
 }
 
 TEST_CASE("parseContent tolerates CRLF line endings") {

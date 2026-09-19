@@ -37,6 +37,8 @@ private:
     void layoutChildren();
 
     void onCommand(int id, HWND ctrl);
+    void chooseFont();
+    void applyFont(const LOGFONTW& lf);
     LRESULT onNotify(LPARAM lParam);
     void onPaint();
     void onContextMenu(HWND target, int screenX, int screenY);
@@ -70,6 +72,15 @@ private:
     HWND toolbar_ = nullptr;
     HWND addressBar_ = nullptr;
     HWND statusBar_ = nullptr;
+
+    // Non-null only when the user has picked a custom UI font via Tools >
+    // Options (ChooseFontW) - null means every control just keeps using
+    // its own default (DEFAULT_GUI_FONT). Owned here; destroyed on
+    // replacement and on window teardown.
+    HFONT customFont_ = nullptr;
+    std::wstring fontFamily_;  // empty = no override, matches SessionData's convention
+    int fontSize_ = 0;
+    bool fontBold_ = false;
 
     TreePane tree_;
     PreviewPane preview_;

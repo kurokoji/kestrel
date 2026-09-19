@@ -62,6 +62,10 @@ SessionData parseContent(const std::wstring& content) {
                     std::array<int, 4> widths{std::stoi(f[2]), std::stoi(f[3]), std::stoi(f[4]), std::stoi(f[5])};
                     if (paneId == 0) data.leftColumnWidths = widths;
                     else data.rightColumnWidths = widths;
+                } else if (f[0] == L"F" && f.size() >= 4) {
+                    data.fontFamily = f[1];
+                    data.fontSize = std::stoi(f[2]);
+                    data.fontBold = (f[3] == L"1");
                 }
             } catch (...) {
                 // Malformed line (hand-edited file, corruption, a future
@@ -92,6 +96,10 @@ std::wstring serialize(const SessionData& data) {
                         data.leftColumnWidths[2], data.leftColumnWidths[3]);
     out += std::format(L"K\t1\t{}\t{}\t{}\t{}\n", data.rightColumnWidths[0], data.rightColumnWidths[1],
                         data.rightColumnWidths[2], data.rightColumnWidths[3]);
+
+    if (!data.fontFamily.empty()) {
+        out += std::format(L"F\t{}\t{}\t{}\n", data.fontFamily, data.fontSize, data.fontBold ? 1 : 0);
+    }
 
     return out;
 }

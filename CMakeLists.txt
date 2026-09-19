@@ -42,6 +42,7 @@ set_property(TARGET kestrel PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONF
 
 target_link_libraries(kestrel PRIVATE
     comctl32
+    comdlg32
     shell32
     shlwapi
     ole32

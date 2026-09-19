@@ -7,6 +7,7 @@
 #include "Resource.h"
 
 #include <commctrl.h>
+#include <commdlg.h>
 #include <shellapi.h>
 #include <shlobj.h>
 #include <shobjidl.h>
@@ -338,6 +339,7 @@ LRESULT MainWindow::wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             return TRUE;
         case WM_DESTROY:
             saveSession();
+            if (customFont_) DeleteObject(customFont_);
             PostQuitMessage(0);
             return 0;
         default:
@@ -372,7 +374,67 @@ void MainWindow::saveSession() {
     data.leftColumnWidths = left_.columnWidths();
     data.rightColumnWidths = right_.columnWidths();
 
+    data.fontFamily = fontFamily_;
+    data.fontSize = fontSize_;
+    data.fontBold = fontBold_;
+
     Session::save(data);
+}
+
+void MainWindow::chooseFont() {
+    HDC hdc = GetDC(hwnd_);
+
+    LOGFONTW lf{};
+    if (fontFamily_.empty()) {
+        HFONT stock = reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+        GetObjectW(stock, sizeof(lf), &lf);
+    } else {
+        wcsncpy_s(lf.lfFaceName, fontFamily_.c_str(), _TRUNCATE);
+        lf.lfHeight = -MulDiv(fontSize_, GetDeviceCaps(hdc, LOGPIXELSY), 72);
+        lf.lfWeight = fontBold_ ? FW_BOLD : FW_NORMAL;
+    }
+
+    CHOOSEFONTW cf{};
+    cf.lStructSize = sizeof(cf);
+    cf.hwndOwner = hwnd_;
+    cf.hDC = hdc;
+    cf.lpLogFont = &lf;
+    cf.Flags = CF_SCREENFONTS | CF_INITTOLOGFONTSTRUCT | CF_NOVERTFONTS | CF_FORCEFONTEXIST;
+
+    if (ChooseFontW(&cf)) {
+        fontFamily_ = lf.lfFaceName;
+        fontSize_ = cf.iPointSize / 10;
+        fontBold_ = lf.lfWeight >= FW_BOLD;
+        applyFont(lf);
+    }
+
+    ReleaseDC(hwnd_, hdc);
+}
+
+void MainWindow::applyFont(const LOGFONTW& lf) {
+    HFONT newFont = CreateFontIndirectW(&lf);
+    if (!newFont) return;
+
+    HFONT old = customFont_;
+    customFont_ = newFont;
+
+    auto setFont = [this](HWND h) {
+        if (h) SendMessageW(h, WM_SETFONT, reinterpret_cast<WPARAM>(customFont_), TRUE);
+    };
+    setFont(tree_.hwnd());
+    setFont(addressBar_);
+    setFont(statusBar_);
+    for (FilePane* pane : {&left_, &right_}) {
+        setFont(pane->hwnd());
+        setFont(pane->tabHwnd());
+        setFont(pane->searchBoxHwnd());
+        setFont(pane->newTabButtonHwnd());
+    }
+
+    if (old) DeleteObject(old);
+
+    layoutChildren();  // row/column-header metrics can change with the font
+    InvalidateRect(hwnd_, nullptr, TRUE);
 }
 
 void MainWindow::onCreate() {
@@ -442,6 +504,20 @@ void MainWindow::onCreate() {
 
         left_.setColumnWidths(pendingSession_->leftColumnWidths);
         right_.setColumnWidths(pendingSession_->rightColumnWidths);
+
+        if (!pendingSession_->fontFamily.empty()) {
+            fontFamily_ = pendingSession_->fontFamily;
+            fontSize_ = pendingSession_->fontSize;
+            fontBold_ = pendingSession_->fontBold;
+
+            LOGFONTW lf{};
+            wcsncpy_s(lf.lfFaceName, fontFamily_.c_str(), _TRUNCATE);
+            HDC hdc = GetDC(hwnd_);
+            lf.lfHeight = -MulDiv(fontSize_, GetDeviceCaps(hdc, LOGPIXELSY), 72);
+            ReleaseDC(hwnd_, hdc);
+            lf.lfWeight = fontBold_ ? FW_BOLD : FW_NORMAL;
+            applyFont(lf);
+        }
 
         if (!pendingSession_->leftTabs.empty()) left_.restoreTabs(pendingSession_->leftTabs, pendingSession_->leftActiveTab);
         else left_.navigate(startPath, false);
@@ -978,7 +1054,7 @@ void MainWindow::onCommand(int id, HWND ctrl) {
             break;
 
         case IDM_TOOLS_OPTIONS:
-            MessageBoxW(hwnd_, L"オプションはまだありません。", L"Kestrel", MB_OK | MB_ICONINFORMATION);
+            chooseFont();
             break;
         case IDM_HELP_ABOUT:
             MessageBoxW(hwnd_, L"Kestrel Filer\n軽量な Win32 ファイラーです。", L"Kestrelについて",

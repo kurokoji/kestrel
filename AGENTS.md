@@ -222,3 +222,14 @@ commit - don't let it drift out of sync with what the app actually does.
   (not just `CoInitializeEx`) on the calling thread** - App.cpp's message
   loop thread was switched from one to the other for this; don't revert
   it back to plain `CoInitializeEx` or dragging silently stops working.
+- The custom UI font (Tools > Options, `MainWindow::chooseFont`/
+  `applyFont`) is deliberately scoped to the tree/lists/tabs/address
+  bar/status bar only - not the toolbar (icon-only, no visible text worth
+  restyling) and not `PreviewPane`'s own text (its labels use
+  `GetStockObject(DEFAULT_GUI_FONT)` directly in `paint()`, and the text
+  preview is intentionally fixed to `Consolas` as a monospace code/text
+  font, unrelated to the general UI font choice). Stored as face name +
+  point size + bold in `SessionData`/`SessionFormat`'s `"F"` record
+  rather than a raw `LOGFONT` blob, since `lfHeight` is DPI/device
+  dependent - `chooseFont()`/the startup restore path both recompute it
+  via `MulDiv(pointSize, GetDeviceCaps(hdc, LOGPIXELSY), 72)`.

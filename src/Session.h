@@ -33,6 +33,13 @@ struct SessionData {
     // be resized independently already (native header drag).
     std::array<int, 4> leftColumnWidths = {220, 70, 80, 130};
     std::array<int, 4> rightColumnWidths = {220, 70, 80, 130};
+
+    // The UI font, chosen via Tools > Options' ChooseFont dialog. An empty
+    // fontFamily means "no override" - fall back to the OS default GUI
+    // font, same as before this setting existed.
+    std::wstring fontFamily;
+    int fontSize = 0;
+    bool fontBold = false;
 };
 
 namespace Session {
