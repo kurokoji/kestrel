@@ -90,6 +90,18 @@ commit - don't let it drift out of sync with what the app actually does.
   Escape** if you don't swallow it - intercepting `WM_KEYDOWN` alone isn't
   enough, because `TranslateMessage` still turns it into a `WM_CHAR` your
   subclass has to also eat. See `SearchBoxSubclassProc`.
+- **`ListView_EnsureVisible` is a no-op if the target row is already
+  inside the current visible range** - it doesn't scroll to make a row
+  the *top* row, only to make it *visible somewhere*. Restoring a tab's
+  scroll position (`FilePane::loadTabIntoLive`) by calling it once with
+  the saved top index silently did nothing whenever that index was small
+  enough to already be on-screen after the fresh `LVSICF_NOSCROLL` reset
+  (which is the common case). Fix: call `EnsureVisible` on the *last*
+  item first (forces a scroll to the bottom, guaranteeing the real target
+  is now off-screen), then call it again on the actual target - the
+  second call is then forced to actually scroll, landing the target at
+  the top. Caught by directly querying `LVM_GETTOPINDEX` after a
+  tab-switch round-trip, not by eyeballing a screenshot.
 - **A pane's tab strip can have a sliver of its rect not actually covered
   by `tabHwnd_`/`newTabButton_`/the list** (never pinned down exactly why
   - not reproducible via `PostMessage`-simulated clicks at any tested
@@ -200,6 +212,10 @@ commit - don't let it drift out of sync with what the app actually does.
 
 ## Design decisions worth preserving
 
+- `FilePane`'s tab state transitions, owner-drawing, and mouse subclass
+  live together in `FilePaneTabs.cpp`; control creation and pane layout
+  remain in `FilePane.cpp`. Keep close-button geometry helpers beside
+  both drawing and hit-testing so their rectangles stay in sync.
 - Tab strip styling (`FilePane::drawTabItem`) is deliberately flat: no
   `DrawEdge` bevel, just a 2px navy underline (`kActiveTabAccent`) on the
   active tab and a plain background fill otherwise - chosen over the
@@ -211,6 +227,22 @@ commit - don't let it drift out of sync with what the app actually does.
   old/new tab rects, not the whole strip. `closeHoverRectFor` deliberately
   reuses `closeButtonRectFor` (just inflated a couple pixels) so the
   hover highlight and the actual click hit-test can't drift apart.
+- `FilePane::TabState` carries `selectedIndices`/`focusedIndex`/
+  `topIndex` (captured in `syncActiveTabIntoStorage`, reapplied in
+  `loadTabIntoLive`) so switching tabs and back doesn't look like the
+  selection got cleared and the view jumped to the top - reported as a
+  usability bug, since `LVS_OWNERDATA` has no memory of its own for
+  per-tab selection/scroll (each tab reuses the same physical ListView).
+  Indices are safe to reuse directly on restore without any staleness
+  check, since a background (inactive) tab's `DirectoryWatcher` isn't
+  running, so its `entries` snapshot can't change shape while it isn't
+  live. Restoring selection via `LVM_SETITEMSTATE` fires `LVN_ITEMCHANGED`
+  the same as a real click would, which would double-count on top of the
+  `stats_ = t.stats` restore already done - so `recomputeSelectionStats()`
+  is called afterward to get the authoritative count from the control's
+  actual state rather than trust the incremental tally through that bulk
+  restore. See the `ListView_EnsureVisible` gotcha above for the scroll
+  half of this.
 - The file-list controls use `LVS_SHOWSELALWAYS`. Without it, a
   ListView's selection isn't just dimmed when it lacks keyboard focus -
   it's fully hidden, and since Windows clears/restores focus across

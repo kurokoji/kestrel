@@ -15,6 +15,7 @@ add_executable(kestrel WIN32
     src/MainWindow.cpp
     src/TreePane.cpp
     src/FilePane.cpp
+    src/FilePaneTabs.cpp
     src/FileEntrySort.cpp
     src/DirectoryModel.cpp
     src/DirectoryWatcher.cpp

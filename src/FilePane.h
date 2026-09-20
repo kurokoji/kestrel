@@ -155,6 +155,16 @@ private:
         std::vector<std::wstring> forward;
         int sortColumn = 0;
         bool sortAscending = true;
+
+        // Selection/scroll position, so switching tabs and back doesn't
+        // look like the selection got cleared and the view jumped to the
+        // top. Indices into `entries` above - safe to reuse directly on
+        // restore since a background (inactive) tab's DirectoryWatcher
+        // isn't running, so entries can't have changed shape underneath it
+        // while it wasn't the live tab.
+        std::vector<int> selectedIndices;
+        int focusedIndex = -1;
+        int topIndex = 0;
     };
 
     void applyEntries(std::vector<FileEntry> entries);
@@ -164,6 +174,9 @@ private:
     std::wstring pathForIndex(int index) const;
     bool matchesSearch(const FileEntry& e) const;
 
+    // Tab state, drawing and mouse handling are implemented in FilePaneTabs.cpp.
+    static LRESULT CALLBACK TabStripSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam,
+                                                 UINT_PTR id, DWORD_PTR refData);
     void syncActiveTabIntoStorage();
     void loadTabIntoLive(int index);
     void switchToTab(int index);
