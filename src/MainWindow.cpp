@@ -154,7 +154,9 @@ bool MainWindow::create(HINSTANCE hInstance, int nCmdShow) {
         h = pendingSession_->windowH;
     }
 
-    hwnd_ = CreateWindowExW(0, kClassName, L"Kestrel Filer", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, x, y, w, h, nullptr, nullptr,
+    // Compose the parent and native children together, so tab/background
+    // erasure is never presented separately from the finished controls.
+    hwnd_ = CreateWindowExW(WS_EX_COMPOSITED, kClassName, L"Kestrel Filer", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, x, y, w, h, nullptr, nullptr,
                              hInstance, this);
     if (!hwnd_) return false;
 
@@ -675,7 +677,9 @@ void MainWindow::layoutChildren() {
     // tab strip's row-count probe). WS_CLIPCHILDREN keeps the parent's
     // background erase off the controls; ALLCHILDREN explicitly schedules
     // their paints too. Keep ERASE/FRAME for old frame pixels and borders.
-    RedrawWindow(hwnd_, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN);
+    // Finish this frame before handling another splitter mouse move:
+    // queued-only WM_PAINT can starve during continuous mouse input.
+    RedrawWindow(hwnd_, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN | RDW_UPDATENOW);
 }
 
 FilePane& MainWindow::activePane() { return activePaneId_ == 0 ? left_ : right_; }

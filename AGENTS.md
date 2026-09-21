@@ -61,12 +61,19 @@ commit - don't let it drift out of sync with what the app actually does.
 ## Win32 gotchas discovered the hard way
 
 - Resize layout uses `MoveWindow(..., FALSE)` and one final
-  `RedrawWindow(RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN)`.
+  `RedrawWindow(RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN | RDW_UPDATENOW)`.
   `TRUE` immediately paints each intermediate position, including the
   multiline tab strip's temporary one-row size. MainWindow uses
   `WS_CLIPCHILDREN` so parent background erasure cannot cover controls;
   retain ALLCHILDREN to repaint them explicitly and ERASE for old frame
   pixels. Lists/tree also enable their native double-buffer styles.
+  A user GIF showed tabs/frames disappearing with queued-only repaint
+  during splitter dragging: finish paints with `RDW_UPDATENOW` before
+  processing the next mouse move, and use `WS_EX_COMPOSITED` on the main
+  window to buffer parent + child erasure/painting together. Do not add
+  CS_OWNDC/CS_CLASSDC/CS_PARENTDC to its class (incompatible with that style).
+  Verified a real divider drag narrower and back with multiline tabs;
+  snapshots confirm completed layouts, not frame-by-frame flicker.
 
 - **TreeView lazy-loading**: a node's `cChildren` flag has to say "I have
   children" (`TVIF_CHILDREN`, `cChildren = 1`) *at creation time*, even
