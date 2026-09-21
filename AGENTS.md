@@ -60,20 +60,17 @@ commit - don't let it drift out of sync with what the app actually does.
 
 ## Win32 gotchas discovered the hard way
 
-- Resize layout uses `MoveWindow(..., FALSE)` and one final
+- Resize layout uses `placeWithoutRedraw` (`SetWindowPos` with
+  `SWP_NOREDRAW | SWP_NOCOPYBITS`) and one final
   `RedrawWindow(RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN | RDW_UPDATENOW)`.
-  `TRUE` immediately paints each intermediate position, including the
-  multiline tab strip's temporary one-row size. MainWindow uses
-  `WS_CLIPCHILDREN` so parent background erasure cannot cover controls;
-  retain ALLCHILDREN to repaint them explicitly and ERASE for old frame
-  pixels. Lists/tree also enable their native double-buffer styles.
-  A user GIF showed tabs/frames disappearing with queued-only repaint
-  during splitter dragging: finish paints with `RDW_UPDATENOW` before
-  processing the next mouse move, and use `WS_EX_COMPOSITED` on the main
-  window to buffer parent + child erasure/painting together. Do not add
-  CS_OWNDC/CS_CLASSDC/CS_PARENTDC to its class (incompatible with that style).
-  Verified a real divider drag narrower and back with multiline tabs;
-  snapshots confirm completed layouts, not frame-by-frame flicker.
+  MainWindow uses WS_CLIPCHILDREN and native children use WS_CLIPSIBLINGS
+  to prevent painting over adjacent controls. Keep ERASE/FRAME to clear
+  old frame pixels and borders. Lists/tree retain native double buffering.
+  Do not restore whole-window WS_EX_COMPOSITED: the user reported headers
+  and list contents at different positions after committing a splitter
+  move. Removed that style and disabled old-pixel copying during placement;
+  the user verified the resulting fix. The drag guide keeps its separate
+  layered popup; resizing still happens only on release.
 
 - **TreeView lazy-loading**: a node's `cChildren` flag has to say "I have
   children" (`TVIF_CHILDREN`, `cChildren = 1`) *at creation time*, even
@@ -239,7 +236,7 @@ commit - don't let it drift out of sync with what the app actually does.
   before ReleaseCapture (which synchronously triggers WM_CAPTURECHANGED).
   A normal moving child guide still invalidated the underlying controls and
   the user reported stutter. Use WS_EX_LAYERED + a white color key to reuse
-  the guide bitmap on moves, outside the parent's composited child tree.
+  the guide bitmap on moves, independently of the parent's child controls.
   WS_EX_NOACTIVATE/TRANSPARENT keep focus and input in the main window;
   popup positions must use ClientToScreen. Skip unchanged guide positions.
 

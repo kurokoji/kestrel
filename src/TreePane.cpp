@@ -24,7 +24,7 @@ bool TreePane::create(HWND parent, HINSTANCE hInstance, int controlId) {
     parentWnd_ = parent;
     hwnd_ = CreateWindowExW(
         WS_EX_CLIENTEDGE, WC_TREEVIEWW, L"",
-        WS_CHILD | WS_VISIBLE | TVS_HASLINES | TVS_HASBUTTONS | TVS_LINESATROOT |
+        WS_CHILD | WS_CLIPSIBLINGS | WS_VISIBLE | TVS_HASLINES | TVS_HASBUTTONS | TVS_LINESATROOT |
             TVS_SHOWSELALWAYS | TVS_DISABLEDRAGDROP,
         0, 0, 0, 0, parent, reinterpret_cast<HMENU>(static_cast<INT_PTR>(controlId)), hInstance, nullptr);
     if (!hwnd_) return false;

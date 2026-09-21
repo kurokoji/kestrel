@@ -99,7 +99,7 @@ bool PreviewPane::create(HWND parent, HINSTANCE hInstance, int controlId) {
         registered = true;
     }
 
-    hwnd_ = CreateWindowExW(WS_EX_CLIENTEDGE, kClassName, L"", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, parent,
+    hwnd_ = CreateWindowExW(WS_EX_CLIENTEDGE, kClassName, L"", WS_CHILD | WS_CLIPSIBLINGS | WS_VISIBLE, 0, 0, 0, 0, parent,
                              reinterpret_cast<HMENU>(static_cast<INT_PTR>(controlId)), hInstance, this);
     return hwnd_ != nullptr;
 }

@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "WindowLayout.h"
+#include "WindowPlacement.h"
 #include "ShellSelection.h"
 #include "ComPtr.h"
 #include "Dialogs.h"
@@ -186,9 +187,9 @@ bool MainWindow::create(HINSTANCE hInstance, int nCmdShow) {
         h = pendingSession_->windowH;
     }
 
-    // Compose the parent and native children together, so tab/background
-    // erasure is never presented separately from the finished controls.
-    hwnd_ = CreateWindowExW(WS_EX_COMPOSITED, kClassName, L"Kestrel Filer", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, x, y, w, h, nullptr, nullptr,
+    // The guide has its own layered surface; keep native controls out of
+    // whole-window composition when committing their new bounds.
+    hwnd_ = CreateWindowExW(0, kClassName, L"Kestrel Filer", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, x, y, w, h, nullptr, nullptr,
                              hInstance, this);
     if (!hwnd_) return false;
 
@@ -596,7 +597,7 @@ void MainWindow::createToolbar() {
     // which pushes the label down and makes the row look bottom-aligned.
     toolbar_ = CreateWindowExW(
         0, TOOLBARCLASSNAME, nullptr,
-        WS_CHILD | WS_VISIBLE | TBSTYLE_FLAT | TBSTYLE_LIST | TBSTYLE_TOOLTIPS | CCS_NOPARENTALIGN | CCS_NODIVIDER,
+        WS_CHILD | WS_CLIPSIBLINGS | WS_VISIBLE | TBSTYLE_FLAT | TBSTYLE_LIST | TBSTYLE_TOOLTIPS | CCS_NOPARENTALIGN | CCS_NODIVIDER,
         0, 0, 0, 0, hwnd_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_TOOLBAR)), hInstance_, nullptr);
 
     SendMessageW(toolbar_, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
@@ -643,14 +644,14 @@ void MainWindow::createToolbar() {
 
 void MainWindow::createAddressBar() {
     addressBar_ =
-        CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 0, 0, 0, 0, hwnd_,
+        CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"", WS_CHILD | WS_CLIPSIBLINGS | WS_VISIBLE | ES_AUTOHSCROLL, 0, 0, 0, 0, hwnd_,
                          reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_ADDRESSBAR)), hInstance_, nullptr);
     SendMessageW(addressBar_, WM_SETFONT, reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)), TRUE);
     SetWindowSubclass(addressBar_, AddressBarSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
 }
 
 void MainWindow::createStatusBar() {
-    statusBar_ = CreateWindowExW(0, STATUSCLASSNAME, nullptr, WS_CHILD | WS_VISIBLE | SBARS_SIZEGRIP, 0, 0, 0, 0,
+    statusBar_ = CreateWindowExW(0, STATUSCLASSNAME, nullptr, WS_CHILD | WS_CLIPSIBLINGS | WS_VISIBLE | SBARS_SIZEGRIP, 0, 0, 0, 0,
                                   hwnd_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_STATUSBAR)), hInstance_,
                                   nullptr);
 }
@@ -687,7 +688,7 @@ void MainWindow::layoutChildren() {
 
     auto nativeRect = [](WindowLayout::Rect r) -> RECT { return {r.left, r.top, r.right, r.bottom}; };
     auto move = [](HWND window, WindowLayout::Rect r) {
-        MoveWindow(window, r.left, r.top, r.right - r.left, r.bottom - r.top, FALSE);
+        placeWithoutRedraw(window, r.left, r.top, r.right - r.left, r.bottom - r.top);
     };
     move(toolbar_, layout.toolbar);
     move(addressBar_, layout.address);
@@ -720,8 +721,7 @@ void MainWindow::layoutChildren() {
     // tab strip's row-count probe). WS_CLIPCHILDREN keeps the parent's
     // background erase off the controls; ALLCHILDREN explicitly schedules
     // their paints too. Keep ERASE/FRAME for old frame pixels and borders.
-    // Finish this frame before handling another splitter mouse move:
-    // queued-only WM_PAINT can starve during continuous mouse input.
+    // Complete the committed layout before returning to input processing.
     RedrawWindow(hwnd_, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN | RDW_UPDATENOW);
 }
 

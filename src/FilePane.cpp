@@ -1,4 +1,5 @@
 #include "FilePane.h"
+#include "WindowPlacement.h"
 #include "Dialogs.h"
 #include "FileEntrySort.h"
 #include "FileOperations.h"
@@ -65,19 +66,19 @@ bool FilePane::create(HWND parent, HINSTANCE hInstance, int controlId, int paneI
     // setBounds() sizes the control's height to match however many rows
     // that ends up being.
     tabHwnd_ = CreateWindowExW(0, WC_TABCONTROLW, L"",
-                                WS_CHILD | WS_VISIBLE | TCS_FOCUSNEVER | TCS_TOOLTIPS | TCS_OWNERDRAWFIXED |
+                                WS_CHILD | WS_CLIPSIBLINGS | WS_VISIBLE | TCS_FOCUSNEVER | TCS_TOOLTIPS | TCS_OWNERDRAWFIXED |
                                     TCS_MULTILINE,
                                 0, 0, 0, 0, parent, nullptr, hInstance, nullptr);
     SendMessageW(tabHwnd_, WM_SETFONT, reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)), TRUE);
     TabCtrl_SetMinTabWidth(tabHwnd_, 120);  // room for a readable label plus the close glyph
 
-    newTabButton_ = CreateWindowExW(0, L"BUTTON", L"+", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 0, 0, 0, 0, parent,
+    newTabButton_ = CreateWindowExW(0, L"BUTTON", L"+", WS_CHILD | WS_CLIPSIBLINGS | WS_VISIBLE | BS_PUSHBUTTON, 0, 0, 0, 0, parent,
                                      nullptr, hInstance, nullptr);
     SendMessageW(newTabButton_, WM_SETFONT, reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)), TRUE);
 
     // Hidden until Ctrl+F; setBounds() only reserves a row for it while
     // searchVisible_ is true.
-    searchBox_ = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"", WS_CHILD | ES_AUTOHSCROLL, 0, 0, 0, 0, parent,
+    searchBox_ = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"", WS_CHILD | WS_CLIPSIBLINGS | ES_AUTOHSCROLL, 0, 0, 0, 0, parent,
                                   nullptr, hInstance, nullptr);
     SendMessageW(searchBox_, WM_SETFONT, reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)), TRUE);
     SetWindowSubclass(searchBox_, SearchBoxSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
@@ -92,7 +93,7 @@ bool FilePane::create(HWND parent, HINSTANCE hInstance, int controlId, int paneI
     // as the active-pane indicator (blue focused / gray unfocused) on top
     // of the custom-painted frame.
     hwnd_ = CreateWindowExW(WS_EX_CLIENTEDGE, WC_LISTVIEWW, L"",
-                             WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_OWNERDATA | LVS_EDITLABELS | LVS_SHOWSELALWAYS,
+                             WS_CHILD | WS_CLIPSIBLINGS | WS_VISIBLE | LVS_REPORT | LVS_OWNERDATA | LVS_EDITLABELS | LVS_SHOWSELALWAYS,
                              0, 0, 0, 0, parent, reinterpret_cast<HMENU>(static_cast<INT_PTR>(controlId)),
                              hInstance, nullptr);
     if (!hwnd_ || !tabHwnd_) return false;
@@ -139,20 +140,20 @@ void FilePane::setBounds(const RECT& outer) {
     // single row's height first, ask how many rows that produced, then
     // resize to fit them all. Neither step paints an intermediate size;
     // MainWindow schedules the repaint after all panes have been placed.
-    MoveWindow(tabHwnd_, outer.left, outer.top, tabStripW, kTabStripHeight, FALSE);
+    placeWithoutRedraw(tabHwnd_, outer.left, outer.top, tabStripW, kTabStripHeight);
     const int tabRows = std::max(1, TabCtrl_GetRowCount(tabHwnd_));
     const int tabStripHeight = tabRows * kTabStripHeight;
-    MoveWindow(tabHwnd_, outer.left, outer.top, tabStripW, tabStripHeight, FALSE);
-    MoveWindow(newTabButton_, outer.left + tabStripW, outer.top, kNewTabButtonWidth, kTabStripHeight, FALSE);
+    placeWithoutRedraw(tabHwnd_, outer.left, outer.top, tabStripW, tabStripHeight);
+    placeWithoutRedraw(newTabButton_, outer.left + tabStripW, outer.top, kNewTabButtonWidth, kTabStripHeight);
 
     int listTop = outer.top + tabStripHeight;
     if (searchVisible_) {
-        MoveWindow(searchBox_, outer.left, listTop, w, kSearchBoxHeight, FALSE);
+        placeWithoutRedraw(searchBox_, outer.left, listTop, w, kSearchBoxHeight);
         listTop += kSearchBoxHeight;
     }
 
     const int h = std::max(0, static_cast<int>(outer.bottom - listTop));
-    MoveWindow(hwnd_, outer.left, listTop, w, h, FALSE);
+    placeWithoutRedraw(hwnd_, outer.left, listTop, w, h);
 }
 
 void FilePane::navigate(std::wstring path, bool addToHistory) {
