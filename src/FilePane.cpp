@@ -97,7 +97,7 @@ bool FilePane::create(HWND parent, HINSTANCE hInstance, int controlId, int paneI
                              hInstance, nullptr);
     if (!hwnd_ || !tabHwnd_) return false;
 
-    ListView_SetExtendedListViewStyle(hwnd_, LVS_EX_FULLROWSELECT);
+    ListView_SetExtendedListViewStyle(hwnd_, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
     SendMessageW(hwnd_, WM_SETFONT, reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)), TRUE);
 
     if (HIMAGELIST himl = IconCache::instance().systemImageList()) {
@@ -137,21 +137,22 @@ void FilePane::setBounds(const RECT& outer) {
     // TCS_MULTILINE wraps onto more rows as needed, but only figures out
     // how many once it knows its actual width - so size it once at a
     // single row's height first, ask how many rows that produced, then
-    // resize to fit them all.
-    MoveWindow(tabHwnd_, outer.left, outer.top, tabStripW, kTabStripHeight, TRUE);
+    // resize to fit them all. Neither step paints an intermediate size;
+    // MainWindow schedules the repaint after all panes have been placed.
+    MoveWindow(tabHwnd_, outer.left, outer.top, tabStripW, kTabStripHeight, FALSE);
     const int tabRows = std::max(1, TabCtrl_GetRowCount(tabHwnd_));
     const int tabStripHeight = tabRows * kTabStripHeight;
-    MoveWindow(tabHwnd_, outer.left, outer.top, tabStripW, tabStripHeight, TRUE);
-    MoveWindow(newTabButton_, outer.left + tabStripW, outer.top, kNewTabButtonWidth, kTabStripHeight, TRUE);
+    MoveWindow(tabHwnd_, outer.left, outer.top, tabStripW, tabStripHeight, FALSE);
+    MoveWindow(newTabButton_, outer.left + tabStripW, outer.top, kNewTabButtonWidth, kTabStripHeight, FALSE);
 
     int listTop = outer.top + tabStripHeight;
     if (searchVisible_) {
-        MoveWindow(searchBox_, outer.left, listTop, w, kSearchBoxHeight, TRUE);
+        MoveWindow(searchBox_, outer.left, listTop, w, kSearchBoxHeight, FALSE);
         listTop += kSearchBoxHeight;
     }
 
     const int h = std::max(0, static_cast<int>(outer.bottom - listTop));
-    MoveWindow(hwnd_, outer.left, listTop, w, h, TRUE);
+    MoveWindow(hwnd_, outer.left, listTop, w, h, FALSE);
 }
 
 void FilePane::navigate(std::wstring path, bool addToHistory) {

@@ -51,6 +51,8 @@ public:
 
     // Positions the tab strip and the ListView within `outer` (the pane's
     // allocated rect, already inset for the active-pane highlight frame).
+    // Does not repaint: the caller must redraw the parent and children
+    // after completing the layout.
     void setBounds(const RECT& outer);
 
     // The tab strip is owner-drawn (each tab needs its own close glyph),

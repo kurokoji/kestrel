@@ -154,7 +154,7 @@ bool MainWindow::create(HINSTANCE hInstance, int nCmdShow) {
         h = pendingSession_->windowH;
     }
 
-    hwnd_ = CreateWindowExW(0, kClassName, L"Kestrel Filer", WS_OVERLAPPEDWINDOW, x, y, w, h, nullptr, nullptr,
+    hwnd_ = CreateWindowExW(0, kClassName, L"Kestrel Filer", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, x, y, w, h, nullptr, nullptr,
                              hInstance, this);
     if (!hwnd_) return false;
 
@@ -642,7 +642,7 @@ void MainWindow::layoutChildren() {
 
     auto nativeRect = [](WindowLayout::Rect r) -> RECT { return {r.left, r.top, r.right, r.bottom}; };
     auto move = [](HWND window, WindowLayout::Rect r) {
-        MoveWindow(window, r.left, r.top, r.right - r.left, r.bottom - r.top, TRUE);
+        MoveWindow(window, r.left, r.top, r.right - r.left, r.bottom - r.top, FALSE);
     };
     move(toolbar_, layout.toolbar);
     move(addressBar_, layout.address);
@@ -671,12 +671,11 @@ void MainWindow::layoutChildren() {
         right_.setBounds(nativeRect(layout.rightInner));
     }
 
-    // erase=TRUE: the active-pane frame is only ever painted as thin bands
-    // around leftOuterRect_/rightOuterRect_, never a full-window fill, so
-    // switching layouts (e.g. single-pane <-> dual-pane) needs the old
-    // background erased first or a stale sliver of the previous frame's
-    // position lingers next to the new one.
-    InvalidateRect(hwnd_, nullptr, TRUE);
+    // Repaint only after every control has its final bounds (including the
+    // tab strip's row-count probe). WS_CLIPCHILDREN keeps the parent's
+    // background erase off the controls; ALLCHILDREN explicitly schedules
+    // their paints too. Keep ERASE/FRAME for old frame pixels and borders.
+    RedrawWindow(hwnd_, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN);
 }
 
 FilePane& MainWindow::activePane() { return activePaneId_ == 0 ? left_ : right_; }

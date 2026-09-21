@@ -60,6 +60,14 @@ commit - don't let it drift out of sync with what the app actually does.
 
 ## Win32 gotchas discovered the hard way
 
+- Resize layout uses `MoveWindow(..., FALSE)` and one final
+  `RedrawWindow(RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN)`.
+  `TRUE` immediately paints each intermediate position, including the
+  multiline tab strip's temporary one-row size. MainWindow uses
+  `WS_CLIPCHILDREN` so parent background erasure cannot cover controls;
+  retain ALLCHILDREN to repaint them explicitly and ERASE for old frame
+  pixels. Lists/tree also enable their native double-buffer styles.
+
 - **TreeView lazy-loading**: a node's `cChildren` flag has to say "I have
   children" (`TVIF_CHILDREN`, `cChildren = 1`) *at creation time*, even
   before any real child items exist. If you insert real children later

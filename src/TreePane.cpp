@@ -29,6 +29,8 @@ bool TreePane::create(HWND parent, HINSTANCE hInstance, int controlId) {
         0, 0, 0, 0, parent, reinterpret_cast<HMENU>(static_cast<INT_PTR>(controlId)), hInstance, nullptr);
     if (!hwnd_) return false;
 
+    TreeView_SetExtendedStyle(hwnd_, TVS_EX_DOUBLEBUFFER, TVS_EX_DOUBLEBUFFER);
+
     SendMessageW(hwnd_, WM_SETFONT, reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)), TRUE);
 
     if (HIMAGELIST himl = IconCache::instance().systemImageList()) {
