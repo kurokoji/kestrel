@@ -26,6 +26,39 @@ constexpr wchar_t kClassName[] = L"KestrelMainWindow";
 constexpr int kActiveFrameWidth = WindowLayout::activeFrameWidth;
 constexpr UINT kDirChangeDebounceMs = 400;
 
+// Owned layered popup: moving the guide reuses its cached bitmap rather
+// than invalidating the file lists underneath a moving child window.
+LRESULT CALLBACK SplitterGuideProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (msg == WM_ERASEBKGND) return 1;
+    if (msg == WM_PAINT) {
+        PAINTSTRUCT ps{};
+        HDC dc = BeginPaint(hwnd, &ps);
+        RECT rect{};
+        GetClientRect(hwnd, &rect);
+        FillRect(dc, &rect, static_cast<HBRUSH>(GetStockObject(WHITE_BRUSH)));
+        DrawFocusRect(dc, &rect);
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
+HWND createSplitterGuide(HWND owner, HINSTANCE instance) {
+    constexpr wchar_t name[] = L"KestrelSplitterGuide";
+    WNDCLASSW wc{};
+    wc.lpfnWndProc = SplitterGuideProc;
+    wc.hInstance = instance;
+    wc.lpszClassName = name;
+    if (!RegisterClassW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return nullptr;
+    HWND guide = CreateWindowExW(WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+                                 name, L"", WS_POPUP, 0, 0, 0, 0, owner, nullptr, instance, nullptr);
+    if (guide && !SetLayeredWindowAttributes(guide, RGB(255, 255, 255), 0, LWA_COLORKEY)) {
+        DestroyWindow(guide);
+        return nullptr;
+    }
+    return guide;
+}
+
 UINT preferredDropEffectFormat() {
     static const UINT fmt = RegisterClipboardFormatW(CFSTR_PREFERREDDROPEFFECT);
     return fmt;
@@ -216,11 +249,6 @@ LRESULT MainWindow::wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             return 0;
         case WM_DRAWITEM: {
             const auto* dis = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
-            if (dis->hwndItem == splitterGuide_) {
-                FillRect(dis->hDC, &dis->rcItem, GetSysColorBrush(COLOR_WINDOW));
-                DrawFocusRect(dis->hDC, &dis->rcItem);
-                return TRUE;
-            }
             if (dis->CtlType == ODT_TAB) {
                 if (dis->hwndItem == left_.tabHwnd()) {
                     left_.drawTabItem(*dis);
@@ -1020,8 +1048,7 @@ void MainWindow::onLButtonDown(int x, int y) {
     }
     if (draggingSplitter_) {
         if (!splitterGuide_) {
-            splitterGuide_ = CreateWindowExW(WS_EX_NOACTIVATE, L"STATIC", L"", WS_CHILD | SS_OWNERDRAW,
-                                             0, 0, 0, 0, hwnd_, nullptr, hInstance_, nullptr);
+            splitterGuide_ = createSplitterGuide(hwnd_, hInstance_);
         }
         if (!splitterGuide_) { draggingSplitter_ = 0; return; }
         SetCapture(hwnd_);
@@ -1036,9 +1063,19 @@ void MainWindow::onMouseMove(int x, int y) {
     const auto& r = draggingSplitter_ == 1 ? pendingSplitterLayout_.splitter1
                   : draggingSplitter_ == 2 ? pendingSplitterLayout_.splitter2
                                            : pendingSplitterLayout_.splitter3;
-    // Only this narrow overlay moves; panes keep their existing HWND bounds.
-    SetWindowPos(splitterGuide_, HWND_TOP, r.left, r.top, r.right - r.left, r.bottom - r.top,
-                 SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    POINT origin{r.left, r.top};
+    ClientToScreen(hwnd_, &origin); // Owned popups use screen coordinates.
+    const RECT bounds{origin.x, origin.y, origin.x + r.right - r.left, origin.y + r.bottom - r.top};
+    const bool visible = IsWindowVisible(splitterGuide_) != FALSE;
+    if (visible && EqualRect(&bounds, &splitterGuideBounds_)) return;
+    if (SetWindowPos(splitterGuide_, HWND_TOP, bounds.left, bounds.top,
+                     bounds.right - bounds.left, bounds.bottom - bounds.top,
+                     SWP_NOACTIVATE | SWP_SHOWWINDOW)) {
+        splitterGuideBounds_ = bounds;
+    }
+    // Flush only the guide's initial/size-change paint. Position-only moves
+    // reuse the layered window image without repainting either pane.
+    UpdateWindow(splitterGuide_);
 }
 
 void MainWindow::cancelSplitterDrag() {

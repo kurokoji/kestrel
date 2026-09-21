@@ -99,6 +99,7 @@ private:
     int contentHeight_ = 0;   // height of that row
     int draggingSplitter_ = 0;  // 0 = none, 1 = tree|left, 2 = left|right, 3 = tree|preview
     HWND splitterGuide_ = nullptr;
+    RECT splitterGuideBounds_{};
     WindowLayout::Input layoutInput_{};
     WindowLayout::Result pendingSplitterLayout_{};
     RECT splitter1Rect_{};

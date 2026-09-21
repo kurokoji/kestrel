@@ -230,13 +230,18 @@ commit - don't let it drift out of sync with what the app actually does.
 
 ## Design decisions worth preserving
 
-- Splitter drags preview only a dotted, owner-drawn STATIC child overlay
+- Splitter drags preview only a dotted, owned layered popup overlay
   above the panes; do not call layoutChildren or modify saved widths on
   WM_MOUSEMOVE. The user explicitly chose deferred resize to avoid paint
   churn. WindowLayout::previewSplitter reuses layout limits for the guide;
   WM_LBUTTONUP commits once. Capture loss/cancel mode/external relayout
   hides the guide without applying the pending position. Clear drag state
   before ReleaseCapture (which synchronously triggers WM_CAPTURECHANGED).
+  A normal moving child guide still invalidated the underlying controls and
+  the user reported stutter. Use WS_EX_LAYERED + a white color key to reuse
+  the guide bitmap on moves, outside the parent's composited child tree.
+  WS_EX_NOACTIVATE/TRANSPARENT keep focus and input in the main window;
+  popup positions must use ClientToScreen. Skip unchanged guide positions.
 
 - Live and stored tab data share `FilePane::TabContent` (path, entries,
   stats, history, sort). Save/restore it as a whole rather than copying
