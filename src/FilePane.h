@@ -22,9 +22,9 @@
 // it is about to paint.
 //
 // Only the active tab's state (path/entries/history/sort) lives in the
-// "live" members below at any moment; other tabs' state sits saved in
+// live_ at any moment; other tabs' state sits saved in
 // tabs_. Switching tabs copies the outgoing tab's live state into tabs_
-// and the incoming tab's saved state into the live members, rather than
+// and the incoming tab's saved state into live_, rather than
 // keeping N separate ListViews around.
 class FilePane {
 public:
@@ -61,16 +61,16 @@ public:
     // glyph under the cursor can be highlighted like a real button.
     void setHoveredCloseTab(int index);
 
-    const std::wstring& currentPath() const { return currentPath_; }
-    const Stats& stats() const { return stats_; }
+    const std::wstring& currentPath() const { return live_.path; }
+    const Stats& stats() const { return live_.stats; }
 
     void navigate(std::wstring path, bool addToHistory);
     void refresh();
     void goBack();
     void goForward();
     void goUp();
-    bool canGoBack() const { return !back_.empty(); }
-    bool canGoForward() const { return !forward_.empty(); }
+    bool canGoBack() const { return !live_.back.empty(); }
+    bool canGoForward() const { return !live_.forward.empty(); }
 
     void newTab();
     void closeTab(int index = -1);  // -1 = the active tab; a no-op if it's the only one left
@@ -147,7 +147,8 @@ public:
     std::function<void()> onTabCountChanged;
 
 private:
-    struct TabState {
+    // Shared by the live tab and saved tabs; copy as a unit on switches.
+    struct TabContent {
         std::wstring path;
         std::vector<FileEntry> entries;
         Stats stats;
@@ -155,10 +156,14 @@ private:
         std::vector<std::wstring> forward;
         int sortColumn = 0;
         bool sortAscending = true;
+    };
+
+    struct TabState {
+        TabContent content;
 
         // Selection/scroll position, so switching tabs and back doesn't
         // look like the selection got cleared and the view jumped to the
-        // top. Indices into `entries` above - safe to reuse directly on
+        // top. Indices into `content.entries` - safe to reuse directly on
         // restore since a background (inactive) tab's DirectoryWatcher
         // isn't running, so entries can't have changed shape underneath it
         // while it wasn't the live tab.
@@ -201,15 +206,7 @@ private:
     std::wstring pendingPrevPath_;
     bool pendingAddToHistory_ = false;
 
-    std::wstring currentPath_;
-    std::vector<FileEntry> entries_;
-    Stats stats_;
-
-    std::vector<std::wstring> back_;
-    std::vector<std::wstring> forward_;
-
-    int sortColumn_ = 0;
-    bool sortAscending_ = true;
+    TabContent live_;
 
     std::vector<TabState> tabs_;
     int activeTab_ = 0;

@@ -158,33 +158,33 @@ void FilePane::navigate(std::wstring path, bool addToHistory) {
     if (path.size() > 3 && !path.empty() && path.back() == L'\\') path.pop_back();
 
     pendingNavPath_ = path;
-    pendingPrevPath_ = currentPath_;
+    pendingPrevPath_ = live_.path;
     pendingAddToHistory_ = addToHistory;
     pendingRequestId_ = model_.requestEnumeration(path, parentWnd_, reinterpret_cast<WPARAM>(this));
 }
 
 void FilePane::refresh() {
-    if (!currentPath_.empty()) navigate(currentPath_, false);
+    if (!live_.path.empty()) navigate(live_.path, false);
 }
 
 void FilePane::goBack() {
-    if (back_.empty()) return;
-    forward_.push_back(currentPath_);
-    std::wstring target = back_.back();
-    back_.pop_back();
+    if (live_.back.empty()) return;
+    live_.forward.push_back(live_.path);
+    std::wstring target = live_.back.back();
+    live_.back.pop_back();
     navigate(target, false);
 }
 
 void FilePane::goForward() {
-    if (forward_.empty()) return;
-    back_.push_back(currentPath_);
-    std::wstring target = forward_.back();
-    forward_.pop_back();
+    if (live_.forward.empty()) return;
+    live_.back.push_back(live_.path);
+    std::wstring target = live_.forward.back();
+    live_.forward.pop_back();
     navigate(target, false);
 }
 
 void FilePane::goUp() {
-    std::filesystem::path p(currentPath_);
+    std::filesystem::path p(live_.path);
     std::filesystem::path parent = p.parent_path();
     if (parent.empty() || parent == p) return;
     navigate(parent.wstring(), true);
@@ -200,69 +200,69 @@ void FilePane::handleDirResult(std::unique_ptr<EnumerationResult> result) {
     }
 
     if (pendingAddToHistory_ && !pendingPrevPath_.empty() && pendingPrevPath_ != pendingNavPath_) {
-        back_.push_back(pendingPrevPath_);
-        forward_.clear();
+        live_.back.push_back(pendingPrevPath_);
+        live_.forward.clear();
     }
 
-    currentPath_ = pendingNavPath_;
+    live_.path = pendingNavPath_;
     applyEntries(std::move(result->entries));
     updateActiveTabLabel();
-    watcher_.watch(currentPath_, parentWnd_, reinterpret_cast<WPARAM>(this));
+    watcher_.watch(live_.path, parentWnd_, reinterpret_cast<WPARAM>(this));
 
     if (onNavigated) onNavigated(*this);
 }
 
 void FilePane::applyEntries(std::vector<FileEntry> entries) {
-    entries_ = std::move(entries);
+    live_.entries = std::move(entries);
     sortEntries();
 
-    stats_.fileCount = 0;
-    stats_.dirCount = 0;
-    for (const auto& e : entries_) {
-        if (e.isDirectory()) ++stats_.dirCount;
-        else ++stats_.fileCount;
+    live_.stats.fileCount = 0;
+    live_.stats.dirCount = 0;
+    for (const auto& e : live_.entries) {
+        if (e.isDirectory()) ++live_.stats.dirCount;
+        else ++live_.stats.fileCount;
     }
-    stats_.selectedCount = 0;
-    stats_.selectedSize = 0;
+    live_.stats.selectedCount = 0;
+    live_.stats.selectedSize = 0;
 
     // LVS_OWNERDATA only repaints automatically when the item COUNT
     // changes; if the new folder happens to have the same number of
     // entries as the old one, the control would otherwise keep showing
     // the previous folder's cached rows. Force a repaint unconditionally.
-    ListView_SetItemCountEx(hwnd_, static_cast<int>(entries_.size()), LVSICF_NOSCROLL);
+    ListView_SetItemCountEx(hwnd_, static_cast<int>(live_.entries.size()), LVSICF_NOSCROLL);
     InvalidateRect(hwnd_, nullptr, FALSE);
 }
 
 void FilePane::sortEntries() {
-    FileEntrySort::sort(entries_, sortColumn_, sortAscending_);
+    FileEntrySort::sort(live_.entries, live_.sortColumn, live_.sortAscending);
 }
 
 void FilePane::recomputeSelectionStats() {
     size_t count = 0;
     uint64_t size = 0;
-    const int total = static_cast<int>(entries_.size());
+    const int total = static_cast<int>(live_.entries.size());
     for (int i = 0; i < total; ++i) {
         if (ListView_GetItemState(hwnd_, i, LVIS_SELECTED) & LVIS_SELECTED) {
             ++count;
-            if (!entries_[i].isDirectory()) size += entries_[i].size;
+            if (!live_.entries[i].isDirectory()) size += live_.entries[i].size;
         }
     }
-    stats_.selectedCount = count;
-    stats_.selectedSize = size;
+    live_.stats.selectedCount = count;
+    live_.stats.selectedSize = size;
 }
 
 std::wstring FilePane::pathForIndex(int index) const {
-    if (index < 0 || static_cast<size_t>(index) >= entries_.size()) return L"";
-    return joinPath(currentPath_, entries_[index].name);
+    if (index < 0 || static_cast<size_t>(index) >= live_.entries.size()) return L"";
+    return joinPath(live_.path, live_.entries[index].name);
 }
 
 void FilePane::activateEntry(int index) {
-    if (index < 0 || static_cast<size_t>(index) >= entries_.size()) return;
-    const FileEntry& e = entries_[index];
+    if (index < 0 || static_cast<size_t>(index) >= live_.entries.size()) return;
+    const FileEntry& e = live_.entries[index];
     if (e.isDirectory()) {
-        navigate(joinPath(currentPath_, e.name), true);
+        navigate(joinPath(live_.path, e.name), true);
     } else {
-        FileOperations::openItem(parentWnd_, joinPath(currentPath_, e.name));
+        FileOperations::openItem(parentWnd_, joinPath(live_.path, e.name));
     }
 }
 
@@ -299,7 +299,7 @@ void FilePane::doDelete() {
 void FilePane::doMkdir() {
     auto name = Dialogs::promptForText(parentWnd_, L"新しいフォルダー", L"フォルダー名:", L"新しいフォルダー");
     if (!name) return;
-    if (FileOperations::createDirectory(parentWnd_, currentPath_, *name)) {
+    if (FileOperations::createDirectory(parentWnd_, live_.path, *name)) {
         refresh();
     }
 }
@@ -367,9 +367,9 @@ void FilePane::onSearchTextChanged() {
 }
 
 void FilePane::jumpToNextMatch() {
-    if (searchQuery_.empty() || entries_.empty()) return;
+    if (searchQuery_.empty() || live_.entries.empty()) return;
 
-    const int count = static_cast<int>(entries_.size());
+    const int count = static_cast<int>(live_.entries.size());
     const int current = ListView_GetNextItem(hwnd_, -1, LVNI_FOCUSED);  // -1 if nothing focused yet
 
     // Walks every item exactly once, starting right after whatever's
@@ -378,7 +378,7 @@ void FilePane::jumpToNextMatch() {
     // single match keeps re-selecting itself rather than doing nothing.
     for (int step = 1; step <= count; ++step) {
         const int i = (current + step) % count;
-        if (matchesSearch(entries_[i])) {
+        if (matchesSearch(live_.entries[i])) {
             ListView_SetItemState(hwnd_, -1, 0, LVIS_SELECTED);
             ListView_SetItemState(hwnd_, i, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
             ListView_EnsureVisible(hwnd_, i, FALSE);
@@ -416,8 +416,8 @@ LRESULT FilePane::handleNotify(NMHDR* nmhdr) {
         case LVN_GETDISPINFOW: {
             auto* di = reinterpret_cast<NMLVDISPINFOW*>(nmhdr);
             const int idx = di->item.iItem;
-            if (idx < 0 || static_cast<size_t>(idx) >= entries_.size()) return 0;
-            const FileEntry& e = entries_[idx];
+            if (idx < 0 || static_cast<size_t>(idx) >= live_.entries.size()) return 0;
+            const FileEntry& e = live_.entries[idx];
 
             if (di->item.mask & LVIF_TEXT) {
                 // Points straight at each FileEntry's own (already-formatted,
@@ -444,11 +444,11 @@ LRESULT FilePane::handleNotify(NMHDR* nmhdr) {
         }
         case LVN_COLUMNCLICK: {
             auto* nmlv = reinterpret_cast<NMLISTVIEW*>(nmhdr);
-            if (nmlv->iSubItem == sortColumn_) {
-                sortAscending_ = !sortAscending_;
+            if (nmlv->iSubItem == live_.sortColumn) {
+                live_.sortAscending = !live_.sortAscending;
             } else {
-                sortColumn_ = nmlv->iSubItem;
-                sortAscending_ = true;
+                live_.sortColumn = nmlv->iSubItem;
+                live_.sortAscending = true;
             }
             sortEntries();
             InvalidateRect(hwnd_, nullptr, FALSE);
@@ -460,13 +460,13 @@ LRESULT FilePane::handleNotify(NMHDR* nmhdr) {
                 const bool wasSel = (nmlv->uOldState & LVIS_SELECTED) != 0;
                 const bool isSel = (nmlv->uNewState & LVIS_SELECTED) != 0;
                 if (nmlv->iItem >= 0) {
-                    if (wasSel != isSel && static_cast<size_t>(nmlv->iItem) < entries_.size()) {
+                    if (wasSel != isSel && static_cast<size_t>(nmlv->iItem) < live_.entries.size()) {
                         if (isSel) {
-                            ++stats_.selectedCount;
-                            if (!entries_[nmlv->iItem].isDirectory()) stats_.selectedSize += entries_[nmlv->iItem].size;
+                            ++live_.stats.selectedCount;
+                            if (!live_.entries[nmlv->iItem].isDirectory()) live_.stats.selectedSize += live_.entries[nmlv->iItem].size;
                         } else {
-                            --stats_.selectedCount;
-                            if (!entries_[nmlv->iItem].isDirectory()) stats_.selectedSize -= entries_[nmlv->iItem].size;
+                            --live_.stats.selectedCount;
+                            if (!live_.entries[nmlv->iItem].isDirectory()) live_.stats.selectedSize -= live_.entries[nmlv->iItem].size;
                         }
                     }
                 } else {
@@ -501,10 +501,10 @@ LRESULT FilePane::handleNotify(NMHDR* nmhdr) {
             auto* di = reinterpret_cast<NMLVDISPINFOW*>(nmhdr);
             if (!di->item.pszText) return FALSE;  // edit cancelled
             const int idx = di->item.iItem;
-            if (idx < 0 || static_cast<size_t>(idx) >= entries_.size()) return FALSE;
+            if (idx < 0 || static_cast<size_t>(idx) >= live_.entries.size()) return FALSE;
             std::wstring newName = di->item.pszText;
-            if (newName.empty() || newName == entries_[idx].name) return FALSE;
-            std::wstring oldPath = joinPath(currentPath_, entries_[idx].name);
+            if (newName.empty() || newName == live_.entries[idx].name) return FALSE;
+            std::wstring oldPath = joinPath(live_.path, live_.entries[idx].name);
             if (FileOperations::renameItem(parentWnd_, oldPath, newName)) {
                 refresh();
                 return TRUE;
@@ -529,7 +529,7 @@ LRESULT FilePane::handleNotify(NMHDR* nmhdr) {
                         // search box, not the list.
                         cd->clrTextBk = GetSysColor(COLOR_HIGHLIGHT);
                         cd->clrText = GetSysColor(COLOR_HIGHLIGHTTEXT);
-                    } else if (idx >= 0 && static_cast<size_t>(idx) < entries_.size() && matchesSearch(entries_[idx])) {
+                    } else if (idx >= 0 && static_cast<size_t>(idx) < live_.entries.size() && matchesSearch(live_.entries[idx])) {
                         cd->clrTextBk = RGB(255, 244, 160);  // pale yellow, like a highlighter
                     }
                     return CDRF_DODEFAULT;

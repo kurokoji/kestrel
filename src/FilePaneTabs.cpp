@@ -117,13 +117,7 @@ LRESULT CALLBACK FilePane::TabStripSubclassProc(HWND hwnd, UINT msg, WPARAM wPar
 void FilePane::syncActiveTabIntoStorage() {
     if (tabs_.empty()) return;
     TabState& t = tabs_[activeTab_];
-    t.path = currentPath_;
-    t.entries = entries_;
-    t.stats = stats_;
-    t.back = back_;
-    t.forward = forward_;
-    t.sortColumn = sortColumn_;
-    t.sortAscending = sortAscending_;
+    t.content = live_;
 
     t.selectedIndices.clear();
     for (int i = ListView_GetNextItem(hwnd_, -1, LVNI_SELECTED); i != -1;
@@ -136,41 +130,35 @@ void FilePane::syncActiveTabIntoStorage() {
 
 void FilePane::loadTabIntoLive(int index) {
     const TabState& t = tabs_[index];
-    currentPath_ = t.path;
-    entries_ = t.entries;
-    stats_ = t.stats;
-    back_ = t.back;
-    forward_ = t.forward;
-    sortColumn_ = t.sortColumn;
-    sortAscending_ = t.sortAscending;
+    live_ = t.content;
     activeTab_ = index;
 
-    ListView_SetItemCountEx(hwnd_, static_cast<int>(entries_.size()), LVSICF_NOSCROLL);
+    ListView_SetItemCountEx(hwnd_, static_cast<int>(live_.entries.size()), LVSICF_NOSCROLL);
     InvalidateRect(hwnd_, nullptr, TRUE);
 
     // Restore selection/focus/scroll so switching tabs and back doesn't
     // look like the selection got cleared and the view jumped to the top.
     // LVM_SETITEMSTATE fires LVN_ITEMCHANGED same as a real click would,
-    // which would double-count on top of the stats_ = t.stats above, so
+    // which would double-count on top of the live_ = t.content above, so
     // recompute from the control's actual state afterward rather than
     // trust the running tally through this bulk restore.
     for (int idx : t.selectedIndices) {
-        if (idx >= 0 && static_cast<size_t>(idx) < entries_.size()) {
+        if (idx >= 0 && static_cast<size_t>(idx) < live_.entries.size()) {
             ListView_SetItemState(hwnd_, idx, LVIS_SELECTED, LVIS_SELECTED);
         }
     }
-    if (t.focusedIndex >= 0 && static_cast<size_t>(t.focusedIndex) < entries_.size()) {
+    if (t.focusedIndex >= 0 && static_cast<size_t>(t.focusedIndex) < live_.entries.size()) {
         ListView_SetItemState(hwnd_, t.focusedIndex, LVIS_FOCUSED, LVIS_FOCUSED);
     }
-    if (!entries_.empty()) {
+    if (!live_.entries.empty()) {
         // EnsureVisible is a no-op if the target is already inside the
         // current (freshly-reset-to-top) visible range, which for a
         // small-ish topIndex it usually is - so it wouldn't actually
         // scroll. Scrolling to the bottom first guarantees the target is
         // then *outside* the visible range, so the second call is forced
         // to actually move the view and lands the target at the top.
-        const int target = std::min(t.topIndex, static_cast<int>(entries_.size()) - 1);
-        ListView_EnsureVisible(hwnd_, static_cast<int>(entries_.size()) - 1, FALSE);
+        const int target = std::min(t.topIndex, static_cast<int>(live_.entries.size()) - 1);
+        ListView_EnsureVisible(hwnd_, static_cast<int>(live_.entries.size()) - 1, FALSE);
         ListView_EnsureVisible(hwnd_, target, FALSE);
     }
     recomputeSelectionStats();
@@ -178,8 +166,8 @@ void FilePane::loadTabIntoLive(int index) {
     // A tab that's never been visited (just restored from a saved
     // session, or freshly created) starts with no entries - load it now.
     // A genuinely empty folder just re-confirms as empty; harmless.
-    if (entries_.empty() && !currentPath_.empty()) {
-        navigate(currentPath_, false);
+    if (live_.entries.empty() && !live_.path.empty()) {
+        navigate(live_.path, false);
     }
 }
 
@@ -198,7 +186,7 @@ void FilePane::cycleTab(bool forward) {
 
 void FilePane::updateActiveTabLabel() {
     if (!tabHwnd_ || tabs_.empty()) return;
-    std::wstring label = tabLabelFor(currentPath_);
+    std::wstring label = tabLabelFor(live_.path);
     TCITEMW item{};
     item.mask = TCIF_TEXT;
     item.pszText = const_cast<LPWSTR>(label.c_str());
@@ -209,11 +197,11 @@ void FilePane::newTab() {
     syncActiveTabIntoStorage();
 
     TabState t;
-    t.path = currentPath_;  // new tab starts out at the same folder
+    t.content.path = live_.path;  // new tab starts out at the same folder
     tabs_.push_back(std::move(t));
     const int newIndex = static_cast<int>(tabs_.size()) - 1;
 
-    std::wstring label = tabLabelFor(currentPath_);
+    std::wstring label = tabLabelFor(live_.path);
     TCITEMW item{};
     item.mask = TCIF_TEXT;
     item.pszText = const_cast<LPWSTR>(label.c_str());
@@ -250,7 +238,7 @@ std::vector<std::wstring> FilePane::tabPaths() {
     syncActiveTabIntoStorage();
     std::vector<std::wstring> paths;
     paths.reserve(tabs_.size());
-    for (const auto& t : tabs_) paths.push_back(t.path);
+    for (const auto& t : tabs_) paths.push_back(t.content.path);
     return paths;
 }
 
@@ -262,7 +250,7 @@ void FilePane::restoreTabs(const std::vector<std::wstring>& paths, int activeInd
 
     for (size_t i = 0; i < paths.size(); ++i) {
         TabState t;
-        t.path = paths[i];
+        t.content.path = paths[i];
         tabs_.push_back(std::move(t));
 
         std::wstring label = tabLabelFor(paths[i]);
@@ -329,8 +317,8 @@ void FilePane::drawTabItem(const DRAWITEMSTRUCT& dis) {
     textRect.right -= (kCloseGlyphSize + kCloseGlyphMargin * 2);
 
     const int idx = static_cast<int>(dis.itemID);
-    const std::wstring& tabPath = (idx == activeTab_) ? currentPath_
-                                   : (idx >= 0 && static_cast<size_t>(idx) < tabs_.size()) ? tabs_[idx].path
+    const std::wstring& tabPath = (idx == activeTab_) ? live_.path
+                                   : (idx >= 0 && static_cast<size_t>(idx) < tabs_.size()) ? tabs_[idx].content.path
                                                                                             : std::wstring{};
     if (auto drive = DriveBadge::driveLetterOf(tabPath)) {
         const std::wstring badgeText(1, *drive);

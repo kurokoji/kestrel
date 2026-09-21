@@ -215,6 +215,12 @@ commit - don't let it drift out of sync with what the app actually does.
 
 ## Design decisions worth preserving
 
+- Live and stored tab data share `FilePane::TabContent` (path, entries,
+  stats, history, sort). Save/restore it as a whole rather than copying
+  members separately, so new fields cannot be omitted on tab switches.
+  `TabState` separately stores selection/focus/scroll snapshots: the live
+  values come from the ListView and must still be captured/restored there.
+
 - `WindowLayout::calculate` owns window-independent geometry and resize
   scaling; `MainWindow::layoutChildren` measures native controls and
   applies the result. Preserve the existing minimum-size/clamping rules
@@ -251,7 +257,7 @@ commit - don't let it drift out of sync with what the app actually does.
   running, so its `entries` snapshot can't change shape while it isn't
   live. Restoring selection via `LVM_SETITEMSTATE` fires `LVN_ITEMCHANGED`
   the same as a real click would, which would double-count on top of the
-  `stats_ = t.stats` restore already done - so `recomputeSelectionStats()`
+  `live_ = t.content` restore already done - so `recomputeSelectionStats()`
   is called afterward to get the authoritative count from the control's
   actual state rather than trust the incremental tally through that bulk
   restore. See the `ListView_EnsureVisible` gotcha above for the scroll
@@ -300,7 +306,7 @@ commit - don't let it drift out of sync with what the app actually does.
   a glance," not a guaranteed-unique color per drive. `drawTabItem` needs
   the tab's *path*, not just its label text (which is already just the
   folder name via `tabLabelFor`) - for the active tab that's the live
-  `currentPath_`, for any other tab it's `tabs_[idx].path` (only synced
+  `live_.path`, for any other tab it's `tabs_[idx].content.path` (only synced
   on tab switch, so reading it directly here rather than caching
   separately is deliberate - it's always correct for non-active tabs).
 - The tab strip is `TCS_MULTILINE`: once tabs stop fitting one row, they
