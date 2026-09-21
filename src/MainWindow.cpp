@@ -1,8 +1,7 @@
 #include "MainWindow.h"
 #include "WindowLayout.h"
 #include "WindowPlacement.h"
-#include "ShellSelection.h"
-#include "ComPtr.h"
+#include "ClipboardFiles.h"
 #include "Dialogs.h"
 #include "FileOperations.h"
 #include "Formatting.h"
@@ -13,7 +12,6 @@
 #include <commdlg.h>
 #include <shellapi.h>
 #include <shlobj.h>
-#include <shobjidl.h>
 #include <windowsx.h>
 
 #include <algorithm>
@@ -26,113 +24,6 @@ namespace {
 constexpr wchar_t kClassName[] = L"KestrelMainWindow";
 constexpr int kActiveFrameWidth = WindowLayout::activeFrameWidth;
 constexpr UINT kDirChangeDebounceMs = 400;
-
-// Owned layered popup: moving the guide reuses its cached bitmap rather
-// than invalidating the file lists underneath a moving child window.
-LRESULT CALLBACK SplitterGuideProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    if (msg == WM_ERASEBKGND) return 1;
-    if (msg == WM_PAINT) {
-        PAINTSTRUCT ps{};
-        HDC dc = BeginPaint(hwnd, &ps);
-        RECT rect{};
-        GetClientRect(hwnd, &rect);
-        FillRect(dc, &rect, static_cast<HBRUSH>(GetStockObject(WHITE_BRUSH)));
-        DrawFocusRect(dc, &rect);
-        EndPaint(hwnd, &ps);
-        return 0;
-    }
-    return DefWindowProcW(hwnd, msg, wParam, lParam);
-}
-
-HWND createSplitterGuide(HWND owner, HINSTANCE instance) {
-    constexpr wchar_t name[] = L"KestrelSplitterGuide";
-    WNDCLASSW wc{};
-    wc.lpfnWndProc = SplitterGuideProc;
-    wc.hInstance = instance;
-    wc.lpszClassName = name;
-    if (!RegisterClassW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return nullptr;
-    HWND guide = CreateWindowExW(WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
-                                 name, L"", WS_POPUP, 0, 0, 0, 0, owner, nullptr, instance, nullptr);
-    if (guide && !SetLayeredWindowAttributes(guide, RGB(255, 255, 255), 0, LWA_COLORKEY)) {
-        DestroyWindow(guide);
-        return nullptr;
-    }
-    return guide;
-}
-
-UINT preferredDropEffectFormat() {
-    static const UINT fmt = RegisterClipboardFormatW(CFSTR_PREFERREDDROPEFFECT);
-    return fmt;
-}
-
-bool setClipboardFiles(HWND owner, const std::vector<std::wstring>& paths, bool cut) {
-    if (paths.empty()) return false;
-
-    size_t chars = 1;  // final extra null terminator
-    for (const auto& p : paths) chars += p.size() + 1;
-
-    const size_t total = sizeof(DROPFILES) + chars * sizeof(wchar_t);
-    HGLOBAL hMem = GlobalAlloc(GHND, total);
-    if (!hMem) return false;
-
-    auto* df = static_cast<DROPFILES*>(GlobalLock(hMem));
-    df->pFiles = sizeof(DROPFILES);
-    df->fWide = TRUE;
-    auto* dst = reinterpret_cast<wchar_t*>(reinterpret_cast<BYTE*>(df) + sizeof(DROPFILES));
-    for (const auto& p : paths) {
-        wcscpy_s(dst, p.size() + 1, p.c_str());
-        dst += p.size() + 1;
-    }
-    *dst = 0;
-    GlobalUnlock(hMem);
-
-    HGLOBAL hEffect = GlobalAlloc(GHND, sizeof(DWORD));
-    if (hEffect) {
-        auto* eff = static_cast<DWORD*>(GlobalLock(hEffect));
-        *eff = cut ? DROPEFFECT_MOVE : DROPEFFECT_COPY;
-        GlobalUnlock(hEffect);
-    }
-
-    if (!OpenClipboard(owner)) {
-        GlobalFree(hMem);
-        if (hEffect) GlobalFree(hEffect);
-        return false;
-    }
-    EmptyClipboard();
-    SetClipboardData(CF_HDROP, hMem);
-    if (hEffect) SetClipboardData(preferredDropEffectFormat(), hEffect);
-    CloseClipboard();
-    return true;
-}
-
-struct ClipboardFiles {
-    std::vector<std::wstring> paths;
-    bool move = false;
-};
-
-std::optional<ClipboardFiles> getClipboardFiles(HWND owner) {
-    if (!OpenClipboard(owner)) return std::nullopt;
-
-    ClipboardFiles result;
-    if (HANDLE hDrop = GetClipboardData(CF_HDROP)) {
-        auto hdrop = static_cast<HDROP>(hDrop);
-        const UINT count = DragQueryFileW(hdrop, 0xFFFFFFFF, nullptr, 0);
-        for (UINT i = 0; i < count; ++i) {
-            wchar_t buf[MAX_PATH];
-            if (DragQueryFileW(hdrop, i, buf, MAX_PATH)) result.paths.emplace_back(buf);
-        }
-    }
-    if (HANDLE hEff = GetClipboardData(preferredDropEffectFormat())) {
-        if (auto* eff = static_cast<DWORD*>(GlobalLock(hEff))) {
-            result.move = (*eff & DROPEFFECT_MOVE) != 0;
-            GlobalUnlock(hEff);
-        }
-    }
-    CloseClipboard();
-
-    if (result.paths.empty()) return std::nullopt;
-    return result;
-}
 
 LRESULT CALLBACK AddressBarSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR /*id*/,
                                          DWORD_PTR refData) {
@@ -268,12 +159,8 @@ LRESULT MainWindow::wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             // A real shell context menu is being tracked - let it handle
             // its own submenus/icons/mnemonics via these, exactly as
             // Explorer does.
-            if (activeShellMenu_) {
-                LRESULT result = 0;
-                if (SUCCEEDED(activeShellMenu_->HandleMenuMsg2(msg, wParam, lParam, &result))) {
-                    return result;
-                }
-            }
+            LRESULT result = 0;
+            if (shellMenu_.forwardMenuMessage(msg, wParam, lParam, result)) return result;
             break;
         }
         case WM_APP_DIR_RESULT: {
@@ -319,11 +206,13 @@ LRESULT MainWindow::wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 POINT pt;
                 GetCursorPos(&pt);
                 ScreenToClient(hwnd_, &pt);
-                if (draggingSplitter_ == 3 || (!draggingSplitter_ && PtInRect(&splitter3Rect_, pt))) {
+                if (splitter_.draggingSplitter() == 3 ||
+                    (!splitter_.dragging() && PtInRect(&splitter_.splitter3Rect(), pt))) {
                     SetCursor(LoadCursorW(nullptr, IDC_SIZENS));
                     return TRUE;
                 }
-                if (draggingSplitter_ || PtInRect(&splitter1Rect_, pt) || PtInRect(&splitter2Rect_, pt)) {
+                if (splitter_.dragging() || PtInRect(&splitter_.splitter1Rect(), pt) ||
+                    PtInRect(&splitter_.splitter2Rect(), pt)) {
                     SetCursor(LoadCursorW(nullptr, IDC_SIZEWE));
                     return TRUE;
                 }
@@ -694,9 +583,8 @@ void MainWindow::layoutChildren() {
     move(addressBar_, layout.address);
     move(tree_.hwnd(), layout.tree);
     move(preview_.hwnd(), layout.preview);
-    splitter1Rect_ = nativeRect(layout.splitter1);
-    splitter2Rect_ = nativeRect(layout.splitter2);
-    splitter3Rect_ = nativeRect(layout.splitter3);
+    splitter_.setRects(nativeRect(layout.splitter1), nativeRect(layout.splitter2), nativeRect(layout.splitter3));
+    splitter_.setLayoutInput(layoutInput_);
     leftOuterRect_ = nativeRect(layout.leftOuter);
     rightOuterRect_ = nativeRect(layout.rightOuter);
 
@@ -806,11 +694,11 @@ void MainWindow::doMoveToOther() {
 }
 
 void MainWindow::doClipboardCopy(bool cut) {
-    setClipboardFiles(hwnd_, activePane().selectedPaths(), cut);
+    ClipboardFiles::set(hwnd_, activePane().selectedPaths(), cut);
 }
 
 void MainWindow::doClipboardPaste() {
-    auto cf = getClipboardFiles(hwnd_);
+    auto cf = ClipboardFiles::get(hwnd_);
     if (!cf) return;
     const bool ok = cf->move ? FileOperations::moveItems(hwnd_, cf->paths, activePane().currentPath())
                               : FileOperations::copyItems(hwnd_, cf->paths, activePane().currentPath());
@@ -851,7 +739,7 @@ void MainWindow::onContextMenu(HWND target, int screenX, int screenY) {
 
     auto paths = pane->selectedPaths();
     if (!paths.empty()) {
-        showShellContextMenuForItems(*pane, paths, screenPt);
+        if (shellMenu_.showAndInvoke(hwnd_, paths, screenPt)) pane->refresh();
         return;
     }
 
@@ -866,42 +754,6 @@ void MainWindow::onContextMenu(HWND target, int screenX, int screenY) {
     AppendMenuW(menu, MF_STRING, IDM_VIEW_REFRESH, L"更新(&R)");
     TrackPopupMenu(menu, TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RIGHTBUTTON, screenPt.x, screenPt.y, 0, hwnd_, nullptr);
     DestroyMenu(menu);
-}
-
-void MainWindow::showShellContextMenuForItems(FilePane& pane, const std::vector<std::wstring>& paths,
-                                               POINT screenPt) {
-    ComPtr<IContextMenu> menu = ShellSelection::get<IContextMenu>(hwnd_, paths);
-    if (!menu) return;
-
-    ComPtr<IContextMenu3> menu3;
-    menu->QueryInterface(IID_PPV_ARGS(menu3.addressOf()));
-
-    HMENU hMenu = CreatePopupMenu();
-    if (FAILED(menu->QueryContextMenu(hMenu, 0, 1, 0x7FFF, CMF_NORMAL))) {
-        DestroyMenu(hMenu);
-        return;
-    }
-
-    // Forwarded to via WM_INITMENUPOPUP/WM_DRAWITEM/WM_MEASUREITEM/
-    // WM_MENUCHAR in wndProc while TrackPopupMenu's nested loop runs.
-    activeShellMenu_ = menu3.get();
-    const UINT cmd =
-        TrackPopupMenu(hMenu, TPM_RETURNCMD | TPM_RIGHTBUTTON, screenPt.x, screenPt.y, 0, hwnd_, nullptr);
-    activeShellMenu_ = nullptr;
-
-    if (cmd != 0) {
-        CMINVOKECOMMANDINFOEX info{};
-        info.cbSize = sizeof(info);
-        info.fMask = CMIC_MASK_UNICODE;
-        info.hwnd = hwnd_;
-        info.lpVerb = MAKEINTRESOURCEA(cmd - 1);
-        info.lpVerbW = MAKEINTRESOURCEW(cmd - 1);
-        info.nShow = SW_SHOWNORMAL;
-        menu->InvokeCommand(reinterpret_cast<CMINVOKECOMMANDINFO*>(&info));
-        pane.refresh();
-    }
-
-    DestroyMenu(hMenu);
 }
 
 void MainWindow::onCommand(int id, HWND ctrl) {
@@ -1030,12 +882,13 @@ LRESULT MainWindow::onNotify(LPARAM lParam) {
 
 void MainWindow::onLButtonDown(int x, int y) {
     POINT pt{x, y};
-    if (PtInRect(&splitter1Rect_, pt)) {
-        draggingSplitter_ = 1;
-    } else if (PtInRect(&splitter2Rect_, pt)) {
-        draggingSplitter_ = 2;
-    } else if (PtInRect(&splitter3Rect_, pt)) {
-        draggingSplitter_ = 3;
+    int splitterId = 0;
+    if (PtInRect(&splitter_.splitter1Rect(), pt)) {
+        splitterId = 1;
+    } else if (PtInRect(&splitter_.splitter2Rect(), pt)) {
+        splitterId = 2;
+    } else if (PtInRect(&splitter_.splitter3Rect(), pt)) {
+        splitterId = 3;
     } else if (PtInRect(&leftOuterRect_, pt)) {
         // Reaching here at all means the click landed on MainWindow's own
         // background, not any child control - i.e. some sliver of the
@@ -1046,50 +899,30 @@ void MainWindow::onLButtonDown(int x, int y) {
     } else if (PtInRect(&rightOuterRect_, pt)) {
         right_.activate();
     }
-    if (draggingSplitter_) {
-        if (!splitterGuide_) {
-            splitterGuide_ = createSplitterGuide(hwnd_, hInstance_);
-        }
-        if (!splitterGuide_) { draggingSplitter_ = 0; return; }
+    if (splitterId) {
+        if (!splitter_.createGuide(hwnd_, hInstance_)) return;
         SetCapture(hwnd_);
-        if (GetCapture() != hwnd_) { cancelSplitterDrag(); return; }
-        onMouseMove(x, y);
+        if (GetCapture() != hwnd_) { splitter_.cancelDrag(); return; }
+        splitter_.beginDrag(splitterId, hwnd_, x, y);
     }
 }
 
 void MainWindow::onMouseMove(int x, int y) {
-    if (!draggingSplitter_) return;
-    pendingSplitterLayout_ = WindowLayout::previewSplitter(layoutInput_, draggingSplitter_, x, y);
-    const auto& r = draggingSplitter_ == 1 ? pendingSplitterLayout_.splitter1
-                  : draggingSplitter_ == 2 ? pendingSplitterLayout_.splitter2
-                                           : pendingSplitterLayout_.splitter3;
-    POINT origin{r.left, r.top};
-    ClientToScreen(hwnd_, &origin); // Owned popups use screen coordinates.
-    const RECT bounds{origin.x, origin.y, origin.x + r.right - r.left, origin.y + r.bottom - r.top};
-    const bool visible = IsWindowVisible(splitterGuide_) != FALSE;
-    if (visible && EqualRect(&bounds, &splitterGuideBounds_)) return;
-    if (SetWindowPos(splitterGuide_, HWND_TOP, bounds.left, bounds.top,
-                     bounds.right - bounds.left, bounds.bottom - bounds.top,
-                     SWP_NOACTIVATE | SWP_SHOWWINDOW)) {
-        splitterGuideBounds_ = bounds;
-    }
-    // Flush only the guide's initial/size-change paint. Position-only moves
-    // reuse the layered window image without repainting either pane.
-    UpdateWindow(splitterGuide_);
+    if (!splitter_.dragging()) return;
+    splitter_.updateDrag(hwnd_, x, y);
 }
 
 void MainWindow::cancelSplitterDrag() {
-    if (!draggingSplitter_) return;
-    draggingSplitter_ = 0;
-    ShowWindow(splitterGuide_, SW_HIDE);
+    if (!splitter_.dragging()) return;
+    splitter_.cancelDrag();
     if (GetCapture() == hwnd_) ReleaseCapture();
 }
 
 void MainWindow::onLButtonUp(int x, int y) {
-    if (!draggingSplitter_) return;
-    onMouseMove(x, y); // Use the release location, even without a final mouse-move message.
-    const auto destination = pendingSplitterLayout_;
-    cancelSplitterDrag();
+    if (!splitter_.dragging()) return;
+    // Use the release location, even without a final mouse-move message.
+    const auto destination = splitter_.endDrag(hwnd_, x, y);
+    if (GetCapture() == hwnd_) ReleaseCapture();
     treeWidth_ = destination.treeWidth;
     leftWidth_ = destination.leftWidth;
     previewHeight_ = destination.previewHeight;

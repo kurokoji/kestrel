@@ -22,6 +22,9 @@ add_executable(kestrel WIN32
     src/DirectoryWatcher.cpp
     src/FileOperations.cpp
     src/ShellSelection.cpp
+    src/ShellContextMenu.cpp
+    src/SplitterController.cpp
+    src/ClipboardFiles.cpp
     src/IconCache.cpp
     src/Dialogs.cpp
     src/FileClassify.cpp

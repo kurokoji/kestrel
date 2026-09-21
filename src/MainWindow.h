@@ -2,14 +2,14 @@
 
 #include "FilePane.h"
 #include "PreviewPane.h"
+#include "ShellContextMenu.h"
 #include "Session.h"
+#include "SplitterController.h"
 #include "TreePane.h"
 #include "WindowLayout.h"
 
 #include <windows.h>
 #include <optional>
-
-struct IContextMenu3;  // avoids pulling <shobjidl.h> into every includer of this header
 
 // The application's single top-level window: menu, toolbar + address bar,
 // status bar, and the tree/left-pane/right-pane layout with three draggable
@@ -43,7 +43,6 @@ private:
     LRESULT onNotify(LPARAM lParam);
     void onPaint();
     void onContextMenu(HWND target, int screenX, int screenY);
-    void showShellContextMenuForItems(FilePane& pane, const std::vector<std::wstring>& paths, POINT screenPt);
 
     void refreshUiForActivePane();
     void updateStatusBar();
@@ -97,14 +96,8 @@ private:
     int lastLayoutWidth_ = 0;  // client width as of the previous layout pass, to scale columns proportionally on resize
     int contentTop_ = 0;      // y of the tree/pane row, cached for splitter drag math
     int contentHeight_ = 0;   // height of that row
-    int draggingSplitter_ = 0;  // 0 = none, 1 = tree|left, 2 = left|right, 3 = tree|preview
-    HWND splitterGuide_ = nullptr;
-    RECT splitterGuideBounds_{};
     WindowLayout::Input layoutInput_{};
-    WindowLayout::Result pendingSplitterLayout_{};
-    RECT splitter1Rect_{};
-    RECT splitter2Rect_{};
-    RECT splitter3Rect_{};
+    SplitterController splitter_;
 
     // Outer (un-inset) rects of the two file panes, used to paint a
     // highlighted frame around whichever one is active - selection color
@@ -113,10 +106,5 @@ private:
     RECT leftOuterRect_{};
     RECT rightOuterRect_{};
 
-    // Non-owning; set only while TrackPopupMenu is running for a real
-    // shell context menu, so WM_INITMENUPOPUP/WM_DRAWITEM/WM_MEASUREITEM/
-    // WM_MENUCHAR (sent to us, the menu's owner, during that nested loop)
-    // can be forwarded to it - required for submenus like "Send to" and
-    // for icons to render correctly.
-    IContextMenu3* activeShellMenu_ = nullptr;
+    ShellContextMenu shellMenu_;
 };
