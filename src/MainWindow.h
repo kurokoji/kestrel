@@ -38,6 +38,11 @@ private:
     void layoutChildren();
 
     void onCommand(int id, HWND ctrl);
+    // If `focus` is the address bar, forwards it a standard edit message
+    // (WM_COPY/WM_CUT/WM_PASTE/EM_SETSEL) and returns true; otherwise
+    // does nothing and returns false, so the caller can fall back to the
+    // pane/clipboard equivalent.
+    bool forwardToAddressBar(HWND focus, UINT msg, WPARAM wParam, LPARAM lParam);
     void chooseFont();
     void applyFont(const LOGFONTW& lf);
     LRESULT onNotify(LPARAM lParam);

@@ -763,6 +763,12 @@ void MainWindow::onContextMenu(HWND target, int screenX, int screenY) {
     DestroyMenu(menu);
 }
 
+bool MainWindow::forwardToAddressBar(HWND focus, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (focus != addressBar_) return false;
+    SendMessageW(addressBar_, msg, wParam, lParam);
+    return true;
+}
+
 void MainWindow::onCommand(int id, HWND ctrl) {
     if (ctrl && ctrl == left_.newTabButtonHwnd()) {
         left_.activate();
@@ -806,20 +812,17 @@ void MainWindow::onCommand(int id, HWND ctrl) {
             break;
 
         case IDM_EDIT_COPY:
-            if (focus == addressBar_) SendMessageW(addressBar_, WM_COPY, 0, 0);
-            else doClipboardCopy(false);
+            if (!forwardToAddressBar(focus, WM_COPY, 0, 0)) doClipboardCopy(false);
             break;
         case IDM_EDIT_CUT:
-            if (focus == addressBar_) SendMessageW(addressBar_, WM_CUT, 0, 0);
-            else doClipboardCopy(true);
+            if (!forwardToAddressBar(focus, WM_CUT, 0, 0)) doClipboardCopy(true);
             break;
         case IDM_EDIT_PASTE:
-            if (focus == addressBar_) SendMessageW(addressBar_, WM_PASTE, 0, 0);
-            else doClipboardPaste();
+            if (!forwardToAddressBar(focus, WM_PASTE, 0, 0)) doClipboardPaste();
             break;
         case IDM_EDIT_SELECTALL:
-            if (focus == addressBar_) SendMessageW(addressBar_, EM_SETSEL, 0, -1);
-            else ListView_SetItemState(activePane().hwnd(), -1, LVIS_SELECTED, LVIS_SELECTED);
+            if (!forwardToAddressBar(focus, EM_SETSEL, 0, -1))
+                ListView_SetItemState(activePane().hwnd(), -1, LVIS_SELECTED, LVIS_SELECTED);
             break;
 
         case IDM_EDIT_FIND:
