@@ -25,6 +25,18 @@ constexpr wchar_t kClassName[] = L"KestrelMainWindow";
 constexpr int kActiveFrameWidth = WindowLayout::activeFrameWidth;
 constexpr UINT kDirChangeDebounceMs = 400;
 
+// lfHeight is DPI/device dependent, so this always recomputes it via
+// MulDiv rather than storing a raw LOGFONT - shared by chooseFont() (when
+// re-opening the picker on top of an existing custom font) and onCreate()
+// (restoring one from SessionData).
+LOGFONTW buildLogFont(const std::wstring& family, int pointSize, bool bold, HDC hdc) {
+    LOGFONTW lf{};
+    wcsncpy_s(lf.lfFaceName, family.c_str(), _TRUNCATE);
+    lf.lfHeight = -MulDiv(pointSize, GetDeviceCaps(hdc, LOGPIXELSY), 72);
+    lf.lfWeight = bold ? FW_BOLD : FW_NORMAL;
+    return lf;
+}
+
 LRESULT CALLBACK AddressBarSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR /*id*/,
                                          DWORD_PTR refData) {
     if (msg == WM_KEYDOWN && wParam == VK_RETURN) {
@@ -274,9 +286,7 @@ void MainWindow::chooseFont() {
         HFONT stock = reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
         GetObjectW(stock, sizeof(lf), &lf);
     } else {
-        wcsncpy_s(lf.lfFaceName, fontFamily_.c_str(), _TRUNCATE);
-        lf.lfHeight = -MulDiv(fontSize_, GetDeviceCaps(hdc, LOGPIXELSY), 72);
-        lf.lfWeight = fontBold_ ? FW_BOLD : FW_NORMAL;
+        lf = buildLogFont(fontFamily_, fontSize_, fontBold_, hdc);
     }
 
     CHOOSEFONTW cf{};
@@ -399,12 +409,9 @@ void MainWindow::onCreate() {
             fontSize_ = pendingSession_->fontSize;
             fontBold_ = pendingSession_->fontBold;
 
-            LOGFONTW lf{};
-            wcsncpy_s(lf.lfFaceName, fontFamily_.c_str(), _TRUNCATE);
             HDC hdc = GetDC(hwnd_);
-            lf.lfHeight = -MulDiv(fontSize_, GetDeviceCaps(hdc, LOGPIXELSY), 72);
+            LOGFONTW lf = buildLogFont(fontFamily_, fontSize_, fontBold_, hdc);
             ReleaseDC(hwnd_, hdc);
-            lf.lfWeight = fontBold_ ? FW_BOLD : FW_NORMAL;
             applyFont(lf);
         }
 
