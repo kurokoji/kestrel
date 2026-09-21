@@ -23,7 +23,6 @@
 namespace {
 
 constexpr wchar_t kClassName[] = L"KestrelMainWindow";
-constexpr int kSplitterWidth = WindowLayout::splitterWidth;
 constexpr int kActiveFrameWidth = WindowLayout::activeFrameWidth;
 constexpr UINT kDirChangeDebounceMs = 400;
 
@@ -184,7 +183,12 @@ LRESULT MainWindow::wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_CREATE:
             onCreate();
             return 0;
+        case WM_CANCELMODE:
+        case WM_CAPTURECHANGED:
+            cancelSplitterDrag();
+            return 0;
         case WM_SIZE:
+            cancelSplitterDrag();
             layoutChildren();
             return 0;
         case WM_COMMAND: {
@@ -212,6 +216,11 @@ LRESULT MainWindow::wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             return 0;
         case WM_DRAWITEM: {
             const auto* dis = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
+            if (dis->hwndItem == splitterGuide_) {
+                FillRect(dis->hDC, &dis->rcItem, GetSysColorBrush(COLOR_WINDOW));
+                DrawFocusRect(dis->hDC, &dis->rcItem);
+                return TRUE;
+            }
             if (dis->CtlType == ODT_TAB) {
                 if (dis->hwndItem == left_.tabHwnd()) {
                     left_.drawTabItem(*dis);
@@ -274,7 +283,7 @@ LRESULT MainWindow::wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             onMouseMove(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
             return 0;
         case WM_LBUTTONUP:
-            onLButtonUp();
+            onLButtonUp(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
             return 0;
         case WM_SETCURSOR: {
             if (LOWORD(lParam) == HTCLIENT) {
@@ -619,6 +628,7 @@ void MainWindow::createStatusBar() {
 }
 
 void MainWindow::layoutChildren() {
+    cancelSplitterDrag(); // Any external layout change invalidates the drag snapshot.
     RECT rc;
     GetClientRect(hwnd_, &rc);
     const int width = rc.right - rc.left;
@@ -632,10 +642,15 @@ void MainWindow::layoutChildren() {
     RECT sbRect{};
     GetWindowRect(statusBar_, &sbRect);
 
-    const auto layout = WindowLayout::calculate({width, height,
+    layoutInput_ = {width, height,
         static_cast<int>(tbSize.cx), static_cast<int>(tbSize.cy), static_cast<int>(sbRect.bottom - sbRect.top),
-        treeWidth_, leftWidth_, previewHeight_, lastLayoutWidth_, singlePaneMode_, activePaneId_});
+        treeWidth_, leftWidth_, previewHeight_, lastLayoutWidth_, singlePaneMode_, activePaneId_};
+    const auto layout = WindowLayout::calculate(layoutInput_);
     lastLayoutWidth_ = width;
+    layoutInput_.previousWidth = width;
+    layoutInput_.treeWidth = layout.treeWidth;
+    layoutInput_.leftWidth = layout.leftWidth;
+    layoutInput_.previewHeight = layout.previewHeight;
     treeWidth_ = layout.treeWidth;
     leftWidth_ = layout.leftWidth;
     previewHeight_ = layout.previewHeight;
@@ -989,13 +1004,10 @@ void MainWindow::onLButtonDown(int x, int y) {
     POINT pt{x, y};
     if (PtInRect(&splitter1Rect_, pt)) {
         draggingSplitter_ = 1;
-        SetCapture(hwnd_);
     } else if (PtInRect(&splitter2Rect_, pt)) {
         draggingSplitter_ = 2;
-        SetCapture(hwnd_);
     } else if (PtInRect(&splitter3Rect_, pt)) {
         draggingSplitter_ = 3;
-        SetCapture(hwnd_);
     } else if (PtInRect(&leftOuterRect_, pt)) {
         // Reaching here at all means the click landed on MainWindow's own
         // background, not any child control - i.e. some sliver of the
@@ -1006,26 +1018,43 @@ void MainWindow::onLButtonDown(int x, int y) {
     } else if (PtInRect(&rightOuterRect_, pt)) {
         right_.activate();
     }
+    if (draggingSplitter_) {
+        if (!splitterGuide_) {
+            splitterGuide_ = CreateWindowExW(WS_EX_NOACTIVATE, L"STATIC", L"", WS_CHILD | SS_OWNERDRAW,
+                                             0, 0, 0, 0, hwnd_, nullptr, hInstance_, nullptr);
+        }
+        if (!splitterGuide_) { draggingSplitter_ = 0; return; }
+        SetCapture(hwnd_);
+        if (GetCapture() != hwnd_) { cancelSplitterDrag(); return; }
+        onMouseMove(x, y);
+    }
 }
 
 void MainWindow::onMouseMove(int x, int y) {
-    if (draggingSplitter_ == 1) {
-        treeWidth_ = x;
-        layoutChildren();
-    } else if (draggingSplitter_ == 2) {
-        leftWidth_ = x - treeWidth_ - kSplitterWidth;
-        layoutChildren();
-    } else if (draggingSplitter_ == 3) {
-        // previewHeight_ is measured from the bottom of the tree/preview
-        // column, so convert the cursor's y back into that distance.
-        previewHeight_ = (contentTop_ + contentHeight_) - y - kSplitterWidth;
-        layoutChildren();
-    }
+    if (!draggingSplitter_) return;
+    pendingSplitterLayout_ = WindowLayout::previewSplitter(layoutInput_, draggingSplitter_, x, y);
+    const auto& r = draggingSplitter_ == 1 ? pendingSplitterLayout_.splitter1
+                  : draggingSplitter_ == 2 ? pendingSplitterLayout_.splitter2
+                                           : pendingSplitterLayout_.splitter3;
+    // Only this narrow overlay moves; panes keep their existing HWND bounds.
+    SetWindowPos(splitterGuide_, HWND_TOP, r.left, r.top, r.right - r.left, r.bottom - r.top,
+                 SWP_NOACTIVATE | SWP_SHOWWINDOW);
 }
 
-void MainWindow::onLButtonUp() {
-    if (draggingSplitter_) {
-        draggingSplitter_ = 0;
-        ReleaseCapture();
-    }
+void MainWindow::cancelSplitterDrag() {
+    if (!draggingSplitter_) return;
+    draggingSplitter_ = 0;
+    ShowWindow(splitterGuide_, SW_HIDE);
+    if (GetCapture() == hwnd_) ReleaseCapture();
+}
+
+void MainWindow::onLButtonUp(int x, int y) {
+    if (!draggingSplitter_) return;
+    onMouseMove(x, y); // Use the release location, even without a final mouse-move message.
+    const auto destination = pendingSplitterLayout_;
+    cancelSplitterDrag();
+    treeWidth_ = destination.treeWidth;
+    leftWidth_ = destination.leftWidth;
+    previewHeight_ = destination.previewHeight;
+    layoutChildren();
 }

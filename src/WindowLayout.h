@@ -30,5 +30,7 @@ struct Result {
 // Caller skips minimized/zero-sized windows and supplies measured control sizes.
 // Minimum sizes and resize scaling deliberately match the native layout.
 Result calculate(const Input& input);
+// Preview only: input (the currently applied layout) is never modified.
+Result previewSplitter(Input input, int splitter, int x, int y);
 
 }  // namespace WindowLayout

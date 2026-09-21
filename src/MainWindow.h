@@ -4,6 +4,7 @@
 #include "PreviewPane.h"
 #include "Session.h"
 #include "TreePane.h"
+#include "WindowLayout.h"
 
 #include <windows.h>
 #include <optional>
@@ -11,7 +12,7 @@
 struct IContextMenu3;  // avoids pulling <shobjidl.h> into every includer of this header
 
 // The application's single top-level window: menu, toolbar + address bar,
-// status bar, and the tree/left-pane/right-pane layout with two draggable
+// status bar, and the tree/left-pane/right-pane layout with three draggable
 // splitters. Owns and wires together the child components; does not itself
 // know how to enumerate directories or perform file operations.
 class MainWindow {
@@ -59,7 +60,8 @@ private:
 
     void onLButtonDown(int x, int y);
     void onMouseMove(int x, int y);
-    void onLButtonUp();
+    void onLButtonUp(int x, int y);
+    void cancelSplitterDrag();
 
     HWND hwnd_ = nullptr;
     HINSTANCE hInstance_ = nullptr;
@@ -96,6 +98,9 @@ private:
     int contentTop_ = 0;      // y of the tree/pane row, cached for splitter drag math
     int contentHeight_ = 0;   // height of that row
     int draggingSplitter_ = 0;  // 0 = none, 1 = tree|left, 2 = left|right, 3 = tree|preview
+    HWND splitterGuide_ = nullptr;
+    WindowLayout::Input layoutInput_{};
+    WindowLayout::Result pendingSplitterLayout_{};
     RECT splitter1Rect_{};
     RECT splitter2Rect_{};
     RECT splitter3Rect_{};

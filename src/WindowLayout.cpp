@@ -59,4 +59,13 @@ Result calculate(const Input& i) {
     }
     return r;
 }
+Result previewSplitter(Input input, int splitter, int x, int y) {
+    input.previousWidth = input.width; // A drag is not a window resize.
+    const auto current = calculate(input);
+    if (splitter == 1) input.treeWidth = x;
+    else if (splitter == 2) input.leftWidth = x - current.treeWidth - splitterWidth;
+    else if (splitter == 3)
+        input.previewHeight = current.contentTop + current.contentHeight - y - splitterWidth;
+    return calculate(input);
+}
 }  // namespace WindowLayout

@@ -230,6 +230,14 @@ commit - don't let it drift out of sync with what the app actually does.
 
 ## Design decisions worth preserving
 
+- Splitter drags preview only a dotted, owner-drawn STATIC child overlay
+  above the panes; do not call layoutChildren or modify saved widths on
+  WM_MOUSEMOVE. The user explicitly chose deferred resize to avoid paint
+  churn. WindowLayout::previewSplitter reuses layout limits for the guide;
+  WM_LBUTTONUP commits once. Capture loss/cancel mode/external relayout
+  hides the guide without applying the pending position. Clear drag state
+  before ReleaseCapture (which synchronously triggers WM_CAPTURECHANGED).
+
 - Live and stored tab data share `FilePane::TabContent` (path, entries,
   stats, history, sort). Save/restore it as a whole rather than copying
   members separately, so new fields cannot be omitted on tab switches.

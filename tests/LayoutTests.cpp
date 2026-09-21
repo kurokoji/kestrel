@@ -58,3 +58,31 @@ TEST_CASE("Toolbar measurement fallback and tall toolbar") {
     CHECK(calculate(input).address == Rect{210, 12, 994, 34});
     CHECK(calculate(input).contentTop == 46);
 }
+
+TEST_CASE("Splitter preview computes destination without changing current layout") {
+    const auto input = normal();
+    const auto original = calculate(input);
+    const auto tree = previewSplitter(input, 1, 280, 0);
+    CHECK(tree.treeWidth == 280);
+    CHECK(tree.splitter1.left == 280);
+    const auto panes = previewSplitter(input, 2, 650, 0);
+    CHECK(panes.leftWidth == 446);
+    CHECK(panes.splitter2.left == 650);
+    const auto preview = previewSplitter(input, 3, 0, 400);
+    CHECK(preview.previewHeight == 276);
+    CHECK(preview.splitter3.top == 400);
+    CHECK(calculate(input).leftOuter == original.leftOuter);
+    CHECK(input.treeWidth == 200);
+    CHECK(input.leftWidth == 350);
+    CHECK(input.previewHeight == 160);
+}
+
+TEST_CASE("Splitter guide stops at the same limits as committed layout") {
+    const auto input = normal();
+    CHECK(previewSplitter(input, 1, -500, 0).splitter1.left == 80);
+    CHECK(previewSplitter(input, 1, 5000, 0).splitter1.left == 832);
+    CHECK(previewSplitter(input, 2, -500, 0).splitter2.left == 284);
+    CHECK(previewSplitter(input, 2, 5000, 0).splitter2.left == 916);
+    CHECK(previewSplitter(input, 3, 0, -500).splitter3.top == 88);
+    CHECK(previewSplitter(input, 3, 0, 5000).splitter3.top == 616);
+}
