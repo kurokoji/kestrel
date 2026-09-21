@@ -1,5 +1,6 @@
 #include "FileOperations.h"
 #include "ComPtr.h"
+#include "ShellSelection.h"
 
 #include <ole2.h>
 #include <shlobj.h>
@@ -159,45 +160,8 @@ void editItem(HWND owner, const std::wstring& path) {
 }
 
 bool startDrag(HWND owner, const std::vector<std::wstring>& sources) {
-    if (sources.empty()) return false;
-
-    std::wstring parentDir = sources[0];
-    if (const size_t slash = parentDir.find_last_of(L'\\'); slash != std::wstring::npos) parentDir.resize(slash);
-
-    ComPtr<IShellFolder> desktop;
-    if (FAILED(SHGetDesktopFolder(desktop.addressOf()))) return false;
-
-    PIDLIST_ABSOLUTE parentPidl = nullptr;
-    if (FAILED(SHParseDisplayName(parentDir.c_str(), nullptr, &parentPidl, 0, nullptr)) || !parentPidl) return false;
-
-    ComPtr<IShellFolder> parentFolder;
-    const HRESULT boundHr = desktop->BindToObject(parentPidl, nullptr, IID_PPV_ARGS(parentFolder.addressOf()));
-    CoTaskMemFree(parentPidl);
-    if (FAILED(boundHr)) return false;
-
-    std::vector<PIDLIST_RELATIVE> childPidls;
-    for (const auto& path : sources) {
-        std::wstring name = path;
-        if (const size_t slash = name.find_last_of(L'\\'); slash != std::wstring::npos) name = name.substr(slash + 1);
-
-        PIDLIST_RELATIVE childPidl = nullptr;
-        if (SUCCEEDED(parentFolder->ParseDisplayName(owner, nullptr, const_cast<LPWSTR>(name.c_str()), nullptr,
-                                                       &childPidl, nullptr))) {
-            childPidls.push_back(childPidl);
-        }
-    }
-    if (childPidls.empty()) return false;
-
-    std::vector<PCUITEMID_CHILD> childPidlPtrs;
-    childPidlPtrs.reserve(childPidls.size());
-    for (auto& p : childPidls) childPidlPtrs.push_back(p);
-
-    ComPtr<IDataObject> dataObj;
-    const HRESULT uiHr =
-        parentFolder->GetUIObjectOf(owner, static_cast<UINT>(childPidlPtrs.size()), childPidlPtrs.data(),
-                                     IID_IDataObject, nullptr, reinterpret_cast<void**>(dataObj.addressOf()));
-    for (auto& p : childPidls) CoTaskMemFree(p);
-    if (FAILED(uiHr)) return false;
+    auto dataObj = ShellSelection::get<IDataObject>(owner, sources);
+    if (!dataObj) return false;
 
     DragDropSource dropSource;
     DWORD effect = DROPEFFECT_NONE;

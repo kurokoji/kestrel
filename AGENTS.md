@@ -19,6 +19,9 @@ commit - don't let it drift out of sync with what the app actually does.
 
 ## TDD workflow (t-wada style)
 
+- Commit each completed unit of work after verification; the user wants
+  commits as work is completed, not accumulated for a later request.
+
 - New logic changes follow Red-Green-Refactor: write a failing test in
   `tests/` first, confirm it fails, write the minimum code to pass, then
   refactor with the test green. Don't write production code ahead of a
@@ -212,6 +215,16 @@ commit - don't let it drift out of sync with what the app actually does.
 
 ## Design decisions worth preserving
 
+- `WindowLayout::calculate` owns window-independent geometry and resize
+  scaling; `MainWindow::layoutChildren` measures native controls and
+  applies the result. Preserve the existing minimum-size/clamping rules
+  and `erase=TRUE` repaint; geometry regressions belong in LayoutTests.
+- Context menus and outbound dragging share `ShellSelection::get<T>`.
+  Keep its same-parent-folder contract and skip-unparseable-child behavior.
+  PIDLs are owned with `unique_ptr` + `CoTaskMemFree`; the deleter's
+  `pointer` alias must remain `PIDLIST_RELATIVE` to preserve the SDK's
+  `__unaligned` qualifier (plain `ITEMIDLIST*` caused MSVC C4090 warnings).
+
 - `FilePane`'s tab state transitions, owner-drawing, and mouse subclass
   live together in `FilePaneTabs.cpp`; control creation and pane layout
   remain in `FilePane.cpp`. Keep close-button geometry helpers beside
@@ -263,7 +276,7 @@ commit - don't let it drift out of sync with what the app actually does.
   `FilePane`'s `LVN_BEGINDRAG`) builds a real shell `IDataObject` via
   `IShellFolder::GetUIObjectOf(..., IID_IDataObject, ...)` on the
   selection's PIDLs - same PIDL-binding pattern as the shell context menu
-  in `MainWindow.cpp`'s `getShellContextMenu`. This gets CF_HDROP and
+  via `ShellSelection::get<T>` in `ShellSelection.cpp`. This gets CF_HDROP and
   every other format Explorer would offer "for free" instead of us having
   to build a custom `IDataObject`. **`DoDragDrop` requires `OleInitialize`
   (not just `CoInitializeEx`) on the calling thread** - App.cpp's message

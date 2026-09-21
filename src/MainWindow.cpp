@@ -1,4 +1,6 @@
 #include "MainWindow.h"
+#include "WindowLayout.h"
+#include "ShellSelection.h"
 #include "ComPtr.h"
 #include "Dialogs.h"
 #include "FileOperations.h"
@@ -14,7 +16,6 @@
 #include <windowsx.h>
 
 #include <algorithm>
-#include <cmath>
 #include <format>
 #include <memory>
 #include <optional>
@@ -22,9 +23,8 @@
 namespace {
 
 constexpr wchar_t kClassName[] = L"KestrelMainWindow";
-constexpr int kSplitterWidth = 4;
-constexpr int kMinPaneWidth = 80;
-constexpr int kActiveFrameWidth = 2;
+constexpr int kSplitterWidth = WindowLayout::splitterWidth;
+constexpr int kActiveFrameWidth = WindowLayout::activeFrameWidth;
 constexpr UINT kDirChangeDebounceMs = 400;
 
 UINT preferredDropEffectFormat() {
@@ -120,55 +120,6 @@ LRESULT CALLBACK XButtonForwardSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, 
         return TRUE;
     }
     return DefSubclassProc(hwnd, msg, wParam, lParam);
-}
-
-// Builds the real Windows shell context menu (Open, Open with, Send to,
-// Cut/Copy/Paste, Delete, Properties, plus whatever third-party shell
-// extensions are registered) for a set of files that all live in the same
-// folder - true for anything selected within one FilePane.
-ComPtr<IContextMenu> getShellContextMenu(HWND owner, const std::vector<std::wstring>& paths) {
-    if (paths.empty()) return {};
-
-    std::wstring parentDir = paths[0];
-    if (const size_t slash = parentDir.find_last_of(L'\\'); slash != std::wstring::npos) {
-        parentDir.resize(slash);
-    }
-
-    ComPtr<IShellFolder> desktop;
-    if (FAILED(SHGetDesktopFolder(desktop.addressOf()))) return {};
-
-    PIDLIST_ABSOLUTE parentPidl = nullptr;
-    if (FAILED(SHParseDisplayName(parentDir.c_str(), nullptr, &parentPidl, 0, nullptr)) || !parentPidl) return {};
-
-    ComPtr<IShellFolder> parentFolder;
-    const HRESULT boundHr = desktop->BindToObject(parentPidl, nullptr, IID_PPV_ARGS(parentFolder.addressOf()));
-    CoTaskMemFree(parentPidl);
-    if (FAILED(boundHr)) return {};
-
-    std::vector<PIDLIST_RELATIVE> childPidls;
-    for (const auto& path : paths) {
-        std::wstring name = path;
-        if (const size_t slash = name.find_last_of(L'\\'); slash != std::wstring::npos) name = name.substr(slash + 1);
-
-        PIDLIST_RELATIVE childPidl = nullptr;
-        if (SUCCEEDED(parentFolder->ParseDisplayName(owner, nullptr, const_cast<LPWSTR>(name.c_str()), nullptr,
-                                                       &childPidl, nullptr))) {
-            childPidls.push_back(childPidl);
-        }
-    }
-    if (childPidls.empty()) return {};
-
-    std::vector<PCUITEMID_CHILD> childPidlPtrs;
-    childPidlPtrs.reserve(childPidls.size());
-    for (auto& p : childPidls) childPidlPtrs.push_back(p);
-
-    ComPtr<IContextMenu> menu;
-    const HRESULT uiHr =
-        parentFolder->GetUIObjectOf(owner, static_cast<UINT>(childPidlPtrs.size()), childPidlPtrs.data(),
-                                     IID_IContextMenu, nullptr, reinterpret_cast<void**>(menu.addressOf()));
-    for (auto& p : childPidls) CoTaskMemFree(p);
-    if (FAILED(uiHr)) return {};
-    return menu;
 }
 
 }  // namespace
@@ -672,61 +623,36 @@ void MainWindow::layoutChildren() {
     const int height = rc.bottom - rc.top;
     if (width <= 0 || height <= 0) return;
 
-    // Keep the left/right pane split at roughly the same proportions when
-    // the window itself is resized, instead of leaving it pinned at a
-    // fixed pixel width and dumping all the change onto the right pane. A
-    // splitter drag doesn't change the outer window width, so this only
-    // kicks in on an actual resize. The tree column is deliberately left
-    // out of this - it stays a fixed pixel width across resizes, only
-    // changing via its own splitter drag.
-    if (lastLayoutWidth_ > 0 && width != lastLayoutWidth_) {
-        const double scale = static_cast<double>(width) / lastLayoutWidth_;
-        leftWidth_ = static_cast<int>(std::lround(leftWidth_ * scale));
-    }
-    lastLayoutWidth_ = width;
-
     SendMessageW(toolbar_, TB_AUTOSIZE, 0, 0);
     SIZE tbSize{};
     SendMessageW(toolbar_, TB_GETMAXSIZE, 0, reinterpret_cast<LPARAM>(&tbSize));
-    if (tbSize.cx <= 0) tbSize.cx = 200;
-    if (tbSize.cy <= 0) tbSize.cy = 22;
-
-    const int rowHeight = std::max(static_cast<int>(tbSize.cy), 22) + 6;
-    MoveWindow(toolbar_, 0, (rowHeight - tbSize.cy) / 2, tbSize.cx, tbSize.cy, TRUE);
-
-    const int addrX = tbSize.cx + 10;
-    const int addrH = 22;
-    const int addrY = (rowHeight - addrH) / 2;
-    int addrW = width - addrX - 6;
-    if (addrW < 60) addrW = 60;
-    MoveWindow(addressBar_, addrX, addrY, addrW, addrH, TRUE);
-
     SendMessageW(statusBar_, WM_SIZE, 0, 0);
     RECT sbRect{};
     GetWindowRect(statusBar_, &sbRect);
-    const int statusH = sbRect.bottom - sbRect.top;
 
-    const int top = rowHeight;
-    const int workHeight = std::max(0, height - statusH - top);
-    contentTop_ = top;
-    contentHeight_ = workHeight;
+    const auto layout = WindowLayout::calculate({width, height,
+        static_cast<int>(tbSize.cx), static_cast<int>(tbSize.cy), static_cast<int>(sbRect.bottom - sbRect.top),
+        treeWidth_, leftWidth_, previewHeight_, lastLayoutWidth_, singlePaneMode_, activePaneId_});
+    lastLayoutWidth_ = width;
+    treeWidth_ = layout.treeWidth;
+    leftWidth_ = layout.leftWidth;
+    previewHeight_ = layout.previewHeight;
+    contentTop_ = layout.contentTop;
+    contentHeight_ = layout.contentHeight;
 
-    int treeW = std::clamp(treeWidth_, kMinPaneWidth, std::max(kMinPaneWidth, width - 2 * kMinPaneWidth - 2 * kSplitterWidth));
-    treeWidth_ = treeW;
-
-    // Left column: the directory tree on top, a preview of the focused
-    // item in the active pane at the bottom.
-    int previewH = std::clamp(previewHeight_, 60, std::max(60, workHeight - 60 - kSplitterWidth));
-    previewHeight_ = previewH;
-    const int treeH = std::max(0, workHeight - previewH - kSplitterWidth);
-    MoveWindow(tree_.hwnd(), 0, top, treeW, treeH, TRUE);
-    splitter3Rect_ = {0, top + treeH, treeW, top + treeH + kSplitterWidth};
-    MoveWindow(preview_.hwnd(), 0, top + treeH + kSplitterWidth, treeW, workHeight - treeH - kSplitterWidth, TRUE);
-
-    int x = 0;
-    x += treeW;
-    splitter1Rect_ = {x, top, x + kSplitterWidth, top + workHeight};
-    x += kSplitterWidth;
+    auto nativeRect = [](WindowLayout::Rect r) -> RECT { return {r.left, r.top, r.right, r.bottom}; };
+    auto move = [](HWND window, WindowLayout::Rect r) {
+        MoveWindow(window, r.left, r.top, r.right - r.left, r.bottom - r.top, TRUE);
+    };
+    move(toolbar_, layout.toolbar);
+    move(addressBar_, layout.address);
+    move(tree_.hwnd(), layout.tree);
+    move(preview_.hwnd(), layout.preview);
+    splitter1Rect_ = nativeRect(layout.splitter1);
+    splitter2Rect_ = nativeRect(layout.splitter2);
+    splitter3Rect_ = nativeRect(layout.splitter3);
+    leftOuterRect_ = nativeRect(layout.leftOuter);
+    rightOuterRect_ = nativeRect(layout.rightOuter);
 
     auto showPane = [](FilePane& p, bool visible) {
         const int cmd = visible ? SW_SHOW : SW_HIDE;
@@ -734,44 +660,15 @@ void MainWindow::layoutChildren() {
         ShowWindow(p.tabHwnd(), cmd);
         ShowWindow(p.newTabButtonHwnd(), cmd);
     };
-
     if (singlePaneMode_) {
-        // Only the active pane is shown, filling the rest of the width;
-        // no second splitter since there's nothing to its right.
         showPane(inactivePane(), false);
         showPane(activePane(), true);
-
-        const RECT outer{x, top, x + std::max(0, width - x), top + workHeight};
-        const RECT inset{outer.left + kActiveFrameWidth, outer.top + kActiveFrameWidth,
-                          outer.right - kActiveFrameWidth, outer.bottom - kActiveFrameWidth};
-        if (activePaneId_ == 0) {
-            leftOuterRect_ = outer;
-            rightOuterRect_ = RECT{};
-            left_.setBounds(inset);
-        } else {
-            rightOuterRect_ = outer;
-            leftOuterRect_ = RECT{};
-            right_.setBounds(inset);
-        }
-        splitter2Rect_ = RECT{};
+        activePane().setBounds(nativeRect(activePaneId_ == 0 ? layout.leftInner : layout.rightInner));
     } else {
         showPane(left_, true);
         showPane(right_, true);
-
-        const int remaining = width - x;
-        int leftW = std::clamp(leftWidth_, kMinPaneWidth, std::max(kMinPaneWidth, remaining - kMinPaneWidth - kSplitterWidth));
-        leftWidth_ = leftW;
-        leftOuterRect_ = {x, top, x + leftW, top + workHeight};
-        left_.setBounds({x + kActiveFrameWidth, top + kActiveFrameWidth, x + leftW - kActiveFrameWidth,
-                          top + workHeight - kActiveFrameWidth});
-        x += leftW;
-        splitter2Rect_ = {x, top, x + kSplitterWidth, top + workHeight};
-        x += kSplitterWidth;
-
-        const int rightW = std::max(0, width - x);
-        rightOuterRect_ = {x, top, x + rightW, top + workHeight};
-        right_.setBounds({x + kActiveFrameWidth, top + kActiveFrameWidth, x + rightW - kActiveFrameWidth,
-                           top + workHeight - kActiveFrameWidth});
+        left_.setBounds(nativeRect(layout.leftInner));
+        right_.setBounds(nativeRect(layout.rightInner));
     }
 
     // erase=TRUE: the active-pane frame is only ever painted as thin bands
@@ -927,7 +824,7 @@ void MainWindow::onContextMenu(HWND target, int screenX, int screenY) {
 
 void MainWindow::showShellContextMenuForItems(FilePane& pane, const std::vector<std::wstring>& paths,
                                                POINT screenPt) {
-    ComPtr<IContextMenu> menu = getShellContextMenu(hwnd_, paths);
+    ComPtr<IContextMenu> menu = ShellSelection::get<IContextMenu>(hwnd_, paths);
     if (!menu) return;
 
     ComPtr<IContextMenu3> menu3;

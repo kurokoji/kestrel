@@ -12,6 +12,7 @@ endif()
 add_executable(kestrel WIN32
     src/main.cpp
     src/App.cpp
+    src/WindowLayout.cpp
     src/MainWindow.cpp
     src/TreePane.cpp
     src/FilePane.cpp
@@ -20,6 +21,7 @@ add_executable(kestrel WIN32
     src/DirectoryModel.cpp
     src/DirectoryWatcher.cpp
     src/FileOperations.cpp
+    src/ShellSelection.cpp
     src/IconCache.cpp
     src/Dialogs.cpp
     src/FileClassify.cpp
@@ -67,6 +69,8 @@ if(KESTREL_BUILD_TESTS)
     enable_testing()
 
     add_executable(kestrel_tests
+        src/WindowLayout.cpp
+        tests/LayoutTests.cpp
         tests/test_main.cpp
         tests/FormattingTests.cpp
         tests/FileEntrySortTests.cpp
