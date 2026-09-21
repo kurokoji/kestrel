@@ -39,6 +39,8 @@ void DirectoryModel::run(std::stop_token stopToken, std::wstring path, HWND noti
 
             FileEntry entry;
             entry.name = root;  // full root, not a bare name - see joinPath()
+            entry.lowercaseName = root;
+            std::ranges::transform(entry.lowercaseName, entry.lowercaseName.begin(), ::towlower);
             entry.attributes = FILE_ATTRIBUTE_DIRECTORY;
 
             ULARGE_INTEGER freeAvail{}, total{};
@@ -84,6 +86,8 @@ void DirectoryModel::run(std::stop_token stopToken, std::wstring path, HWND noti
 
         FileEntry entry;
         entry.name = findData.cFileName;
+        entry.lowercaseName = entry.name;
+        std::ranges::transform(entry.lowercaseName, entry.lowercaseName.begin(), ::towlower);
         entry.attributes = findData.dwFileAttributes;
         entry.modified = findData.ftLastWriteTime;
         if (!entry.isDirectory()) {

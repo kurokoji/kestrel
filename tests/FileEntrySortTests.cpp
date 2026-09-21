@@ -2,6 +2,8 @@
 
 #include "FileEntrySort.h"
 
+#include <algorithm>
+#include <cwctype>
 #include <vector>
 
 namespace {
@@ -10,6 +12,8 @@ FileEntry makeEntry(const std::wstring& name, bool isDir = false, uint64_t size 
                      const std::wstring& extension = L"", ULARGE_INTEGER modified = {}) {
     FileEntry e;
     e.name = name;
+    e.lowercaseName = name;
+    std::ranges::transform(e.lowercaseName, e.lowercaseName.begin(), ::towlower);
     e.extension = extension;
     e.size = size;
     e.modified.dwLowDateTime = modified.LowPart;
@@ -83,4 +87,11 @@ TEST_CASE("matchesSearch with an empty query never matches") {
 TEST_CASE("matchesSearch is a case-insensitive substring match on the name") {
     CHECK(FileEntrySort::matchesSearch(makeEntry(L"MyReport.txt"), L"report"));
     CHECK_FALSE(FileEntrySort::matchesSearch(makeEntry(L"MyReport.txt"), L"invoice"));
+}
+
+TEST_CASE("matchesSearch reads the precomputed lowercaseName rather than re-deriving it from name") {
+    FileEntry e = makeEntry(L"Report.TXT");
+    e.lowercaseName = L"mismatched";  // deliberately inconsistent with e.name
+    CHECK(FileEntrySort::matchesSearch(e, L"mismatch"));
+    CHECK_FALSE(FileEntrySort::matchesSearch(e, L"report"));
 }

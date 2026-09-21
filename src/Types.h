@@ -32,6 +32,13 @@ struct FileEntry {
     std::wstring formattedSize;      // empty for directories, matching the display convention
     std::wstring formattedModified;
 
+    // Also precomputed by DirectoryModel::run, for the same reason:
+    // FileEntrySort::matchesSearch is called from NM_CUSTOMDRAW's
+    // CDDS_ITEMPREPAINT while a search is active, i.e. once per visible
+    // row on every repaint/scroll - re-lower-casing `name` there would
+    // mean a fresh heap-allocated copy per row per paint.
+    std::wstring lowercaseName;
+
     [[nodiscard]] bool isDirectory() const noexcept {
         return (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
     }
