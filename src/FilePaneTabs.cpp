@@ -614,9 +614,23 @@ void FilePane::drawTabItem(HDC hdc, const RECT& r, int index) {
             FillRgn(hdc, rgn, GetSysColorBrush(COLOR_BTNSHADOW));
             DeleteObject(rgn);
         }
+        // Drawn as two GDI lines rather than the "×" glyph - a font's
+        // glyph has its own ascent/descent baked in, off-center from its
+        // nominal box in a way that made DT_VCENTER read a bit low no
+        // matter how the rect was nudged. Plain lines land exactly where
+        // the rect says, in any font, at any DPI.
         RECT closeRect = closeButtonRectFor(r);
-        SetTextColor(hdc, GetSysColor(hovered ? COLOR_WINDOW : COLOR_GRAYTEXT));
-        DrawTextW(hdc, L"×", -1, &closeRect, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOCLIP);
+        HPEN pen = CreatePen(PS_SOLID, 1, GetSysColor(hovered ? COLOR_WINDOW : COLOR_GRAYTEXT));
+        HPEN oldPen = static_cast<HPEN>(SelectObject(hdc, pen));
+        constexpr int kGlyphInset = 3;
+        // LineTo excludes its own endpoint pixel - without the +1s the
+        // bottom tip of each stroke was left undrawn.
+        MoveToEx(hdc, closeRect.left + kGlyphInset, closeRect.top + kGlyphInset, nullptr);
+        LineTo(hdc, closeRect.right - kGlyphInset + 1, closeRect.bottom - kGlyphInset + 1);
+        MoveToEx(hdc, closeRect.right - kGlyphInset, closeRect.top + kGlyphInset, nullptr);
+        LineTo(hdc, closeRect.left + kGlyphInset - 1, closeRect.bottom - kGlyphInset + 1);
+        SelectObject(hdc, oldPen);
+        DeleteObject(pen);
     }
 
     SelectObject(hdc, old);
