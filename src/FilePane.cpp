@@ -439,8 +439,9 @@ LRESULT FilePane::handleNotify(NMHDR* nmhdr) {
                 wcsncpy_s(di->item.pszText, di->item.cchTextMax, text, _TRUNCATE);
             }
             if (di->item.mask & LVIF_IMAGE) {
-                di->item.iImage = e.isDirectory() ? IconCache::instance().iconForDirectory()
-                                                   : IconCache::instance().iconForFile(e.extension);
+                di->item.iImage = e.isDirectory()
+                                       ? IconCache::instance().iconForPath(joinPath(live_.path, e.name))
+                                       : IconCache::instance().iconForFile(e.extension);
             }
             return 0;
         }

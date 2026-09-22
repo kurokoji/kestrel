@@ -441,3 +441,21 @@ commit - don't let it drift out of sync with what the app actually does.
   isn't ready (e.g. an empty optical drive) just fails that call and
   shows a blank size, same as any other entry the model couldn't get
   info for - not specially handled as an error.
+- `IconCache::iconForPath` resolves the shell's real per-path icon
+  (`SHGetFileInfoW` on the actual path, no `SHGFI_USEFILEATTRIBUTES`)
+  rather than the one generic folder icon `iconForDirectory`/
+  `iconForFile` give every folder/extension - this is what makes special
+  folders (Downloads, Desktop, custom desktop.ini icons) and per-drive
+  icons (optical/removable) show their real shell icon instead of a
+  plain folder glyph. `kThisPcPath` is special-cased since it isn't a
+  real filesystem path - `SHGetFileInfoW` needs a PIDL for it
+  (`SHGetKnownFolderIDList(FOLDERID_ComputerFolder, ...)` +
+  `SHGFI_PIDL`), not a path string. Used by both `TreePane::addNode`
+  (every root/child node already carries a real path) and `FilePane`'s
+  `LVN_GETDISPINFOW` (built via the existing `joinPath` - which already
+  returns full drive roots as-is for the This-PC view, so drives get
+  their real per-drive icon too, not just tree "PC" children). Cached by
+  lowercased path, same unbounded-for-the-session pattern as
+  `extensionIcons_`. Deliberately not merged into `iconForDirectory`:
+  that one stays a single fast cached lookup for the plain "no real path
+  available yet" case.

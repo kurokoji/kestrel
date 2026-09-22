@@ -44,7 +44,8 @@ bool TreePane::create(HWND parent, HINSTANCE hInstance, int controlId) {
 HTREEITEM TreePane::addNode(HTREEITEM parent, const std::wstring& text, const std::wstring& path,
                              bool likelyHasChildren) {
     auto* data = new NodeData{path, false};
-    const int icon = IconCache::instance().iconForDirectory();
+    const int icon = path.empty() ? IconCache::instance().iconForDirectory()
+                                   : IconCache::instance().iconForPath(path);
 
     TVINSERTSTRUCTW tvis{};
     tvis.hParent = parent;

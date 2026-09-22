@@ -22,10 +22,18 @@ public:
     int iconForDirectory();
     int iconForFile(const std::wstring& extensionLower);
 
+    // Resolves the shell's actual per-path icon (special folders like
+    // Downloads/Desktop, custom desktop.ini icons, per-drive icons for
+    // optical/removable media, "This PC" itself) rather than the generic
+    // folder icon. Falls back to iconForDirectory() if the shell can't
+    // resolve the path. Cached by lowercased path.
+    int iconForPath(const std::wstring& path);
+
 private:
     IconCache() = default;
 
     HIMAGELIST himl_ = nullptr;
     int folderIcon_ = -1;
     std::unordered_map<std::wstring, int> extensionIcons_;
+    std::unordered_map<std::wstring, int> pathIcons_;
 };
