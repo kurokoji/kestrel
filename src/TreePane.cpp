@@ -75,6 +75,9 @@ void TreePane::addRootItems() {
     addKnownFolder(FOLDERID_Profile, L"ユーザープロファイル");
     addKnownFolder(FOLDERID_Documents, L"ドキュメント");
     addKnownFolder(FOLDERID_Downloads, L"ダウンロード");
+    addKnownFolder(FOLDERID_Pictures, L"ピクチャ");
+    addKnownFolder(FOLDERID_Music, L"ミュージック");
+    addKnownFolder(FOLDERID_Videos, L"ビデオ");
 
     // cChildren must already claim "has children" here - comctl32 gates
     // TVE_EXPAND on that hint, not just on whether child items actually
