@@ -204,6 +204,44 @@ commit - don't let it drift out of sync with what the app actually does.
   just the alpha row, `Graphics::DrawImage`) - GDI+ correctly respects
   the icon's real alpha this way, unlike `ImageList_DrawEx`. See
   `FilePane::handleNotify`'s `NM_CUSTOMDRAW`/`CDDS_ITEMPOSTPAINT` case.
+- **SysTabControl32 (`TCS_MULTILINE`) always renders whichever row holds
+  the *selected* tab as the bottom-most row, and re-sorts row order on
+  every `TabCtrl_SetCurSel` - including the one it does internally on a
+  plain click.** This made drag-to-reorder-tabs fundamentally unworkable
+  while still using the real control: a drag that crossed rows looked
+  fine while nothing was touching selection, but the instant selection
+  was touched again (drag end, or even just the next ordinary tab
+  click) the rows visibly snapped back into "selected tab's row last"
+  order - undoing the reorder or scrambling unrelated tabs' rows. Tried
+  and failed: skipping `SetCurSel` mid-drag (row order still exploded
+  the moment a later click set it for real), and forcing "no tab
+  selected" (`TabCtrl_SetCurSel(hwnd, -1)`) for the drag's duration
+  (same problem, deferred one step). There's no documented way to
+  disable this reflow. The fix was to stop using SysTabControl32
+  entirely - `FilePane`'s tab strip (`tabHwnd_`) is now a plain
+  `WS_CHILD` window with a from-scratch `WNDCLASSW` (`lpfnWndProc =
+  DefWindowProcW`), and `FilePaneTabs.cpp` owns everything the real
+  control used to give for free: fixed-width left-to-right row-wrapping
+  layout (`computeTabLayout`/`relayoutTabs`, cached in `tabRects_`),
+  hit-testing (`hitTestTab`/`hitTestTabApprox`), painting
+  (`drawTabItem`, called from `WM_PAINT` instead of `WM_DRAWITEM`), and
+  selection (`activeTab_` alone - no separate "control's own selected
+  item" exists any more to fight with). `moveTab` now just
+  erases/inserts in `tabs_` and calls `relayoutTabs()`; there's nothing
+  resembling "selected row" left to reshuffle.
+- **A plain `WS_CHILD` window made from a from-scratch `WNDCLASSW`
+  doesn't track `WM_SETFONT`/`WM_GETFONT` on its own** - unlike a real
+  control (button, edit, the old SysTabControl32), `DefWindowProcW`
+  just drops `WM_SETFONT` on the floor and answers `WM_GETFONT` with
+  whatever it always would (nothing useful). Sending `WM_SETFONT` to
+  `FilePane::tabHwnd_` (the tab strip above) silently did nothing to
+  what it later painted with, until `TabStripSubclassProc` grew its own
+  `WM_SETFONT`/`WM_GETFONT` handlers storing/returning `tabFont_` -
+  `drawTabItem` reads `tabFont_` directly rather than round-tripping
+  through `WM_GETFONT`. Also has to be sent *after*
+  `SetWindowSubclass`, not before - sent any earlier it only reaches the
+  raw `DefWindowProcW`, which still drops it, since the subclass isn't
+  installed yet to catch it.
 
 ## Testing in this sandbox (if you're doing UI verification)
 

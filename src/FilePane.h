@@ -14,8 +14,9 @@
 #include <vector>
 
 // One file listing pane: a details-mode, owner-data ListView backed by a
-// DirectoryModel, with a native tab strip above it (SysTabControl32) so
-// the pane can hold several independent locations at once. Owner-data
+// DirectoryModel, with a self-drawn tab strip above it (a plain child
+// window, not SysTabControl32 - see FilePaneTabs.cpp for why) so the pane
+// can hold several independent locations at once. Owner-data
 // (LVS_OWNERDATA) is used deliberately so that directories with huge
 // numbers of entries don't pay the cost of building one ListView item per
 // file - the control only ever asks us (via LVN_GETDISPINFO) for the rows
@@ -54,10 +55,6 @@ public:
     // Does not repaint: the caller must redraw the parent and children
     // after completing the layout.
     void setBounds(const RECT& outer);
-
-    // The tab strip is owner-drawn (each tab needs its own close glyph),
-    // so MainWindow forwards WM_DRAWITEM for tabHwnd() here.
-    void drawTabItem(const DRAWITEMSTRUCT& dis);
 
     // Called by the tab strip's mouse-move/leave subclass so the close
     // glyph under the cursor can be highlighted like a real button.
@@ -166,11 +163,11 @@ public:
     std::function<void(FilePane&)> onFocusChanged;
     std::function<void()> onSearchVisibilityChanged;
 
-    // Fired after a tab is added or removed - the tab strip is
-    // TCS_MULTILINE, so the number of rows (and therefore how much
-    // height setBounds() needs to give it) can change with the tab
-    // count. MainWindow re-runs layoutChildren() on this same as it does
-    // for onSearchVisibilityChanged.
+    // Fired after a tab is added, removed, or the strip's own width
+    // changes how many rows the tabs wrap onto (see computeTabLayout),
+    // so the number of rows (and therefore how much height setBounds()
+    // needs to give it) can change. MainWindow re-runs layoutChildren()
+    // on this same as it does for onSearchVisibilityChanged.
     std::function<void()> onTabCountChanged;
 
 private:
@@ -206,18 +203,56 @@ private:
     std::wstring pathForIndex(int index) const;
     bool matchesSearch(const FileEntry& e) const;
 
-    // Tab state, drawing and mouse handling are implemented in FilePaneTabs.cpp.
+    // Tab state, layout, drawing and mouse handling are implemented in
+    // FilePaneTabs.cpp.
     static LRESULT CALLBACK TabStripSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam,
                                                  UINT_PTR id, DWORD_PTR refData);
     void syncActiveTabIntoStorage();
     void loadTabIntoLive(int index);
     void switchToTab(int index);
-    void updateActiveTabLabel();
-    LRESULT handleTabNotify(NMHDR* nmhdr);
+    void moveTab(int from, int to);
+
+    // Tab strip layout: fixed-width tabs packed left-to-right, wrapping
+    // to a new row once they no longer fit (same visual result as the
+    // old TCS_MULTILINE, just computed ourselves - see FilePaneTabs.cpp
+    // for why comctl32's own version of this had to go). relayoutTabs()
+    // recomputes tabRects_ from tabs_.size() and tabStripWidth_ and
+    // fires onTabCountChanged if the row count changed; call it after
+    // anything that changes either one.
+    void relayoutTabs();
+    std::vector<RECT> computeTabLayout(int width) const;
+    int tabRowCount() const;
+    int hitTestTab(POINT pt) const;  // exact only; -1 if pt isn't over any tab
+    int hitTestTabApprox(POINT pt) const;  // falls back to nearest tab by distance
+    void drawTabItem(HDC hdc, const RECT& r, int index);
+
+    // Tab-reorder drag visuals: a small layered popup showing a snapshot
+    // of the tab being dragged, so it visibly follows the cursor while
+    // moveTab() does the real (instant, no-animation) reordering
+    // underneath. All in FilePaneTabs.cpp alongside the rest of the drag
+    // handling in TabStripSubclassProc.
+    void beginTabDrag(int index, POINT clientPt);
+    void updateTabDragGhost(POINT clientPt);
+    void endTabDrag();
 
     HWND hwnd_ = nullptr;
     HWND tabHwnd_ = nullptr;
+    // tabHwnd_ is a plain window (DefWindowProc), which - unlike a real
+    // control - doesn't track its own WM_SETFONT/WM_GETFONT; without
+    // this, drawTabItem's WM_GETFONT query always came back empty and
+    // the strip silently fell back to whatever HDC default font, never
+    // picking up the user's chosen UI font. Set from WM_SETFONT in
+    // TabStripSubclassProc, read directly by drawTabItem.
+    HFONT tabFont_ = nullptr;
+    std::vector<RECT> tabRects_;  // client-coordinate rect per tab, in tabs_ order; rebuilt by relayoutTabs()
+    int tabStripWidth_ = 0;  // set by setBounds(); relayoutTabs() wraps tabs within this width
     int hoveredCloseTab_ = -1;  // -1 = no tab's close glyph is under the cursor
+    int dragTabIndex_ = -1;  // -1 = no drag in progress; the tab currently being dragged, tracked as it moves
+    bool dragActive_ = false;  // true once the press has moved past the drag threshold (vs. a plain click)
+    POINT dragStartPt_{};  // client point of the WM_LBUTTONDOWN that might become a drag
+    HWND dragGhost_ = nullptr;  // layered popup showing the dragged tab; lazily created on first drag
+    HBITMAP dragGhostBitmap_ = nullptr;  // snapshot of the tab at drag start; owned, freed in endTabDrag
+    POINT dragGhostOffset_{};  // grab point relative to the tab's own top-left, so the ghost doesn't jump under the cursor
     HWND newTabButton_ = nullptr;
     HWND searchBox_ = nullptr;
     bool searchVisible_ = false;

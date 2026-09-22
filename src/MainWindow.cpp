@@ -152,20 +152,10 @@ LRESULT MainWindow::wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_CONTEXTMENU:
             onContextMenu(reinterpret_cast<HWND>(wParam), GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
             return 0;
-        case WM_DRAWITEM: {
-            const auto* dis = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
-            if (dis->CtlType == ODT_TAB) {
-                if (dis->hwndItem == left_.tabHwnd()) {
-                    left_.drawTabItem(*dis);
-                    return TRUE;
-                }
-                if (dis->hwndItem == right_.tabHwnd()) {
-                    right_.drawTabItem(*dis);
-                    return TRUE;
-                }
-            }
-            [[fallthrough]];
-        }
+        case WM_DRAWITEM:
+            // The tab strips paint themselves now (a plain window, not
+            // an owner-drawn SysTabControl32) - this is only still hit
+            // for the shell context menu's own items, forwarded below.
         case WM_INITMENUPOPUP:
         case WM_MEASUREITEM:
         case WM_MENUCHAR: {

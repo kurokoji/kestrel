@@ -65,19 +65,26 @@ bool FilePane::create(HWND parent, HINSTANCE hInstance, int controlId, int paneI
     parentWnd_ = parent;
     paneId_ = paneId;
 
-    // TCS_FOCUSNEVER so clicking a tab doesn't steal keyboard focus away
-    // from the list - matches how browser tab strips behave.
-    // TCS_OWNERDRAWFIXED so each tab can paint its own close ("x") glyph.
-    // TCS_MULTILINE so once tabs no longer fit one row, they wrap onto
-    // additional rows instead of the default scroll-arrow behavior -
-    // setBounds() sizes the control's height to match however many rows
-    // that ends up being.
-    tabHwnd_ = CreateWindowExW(0, WC_TABCONTROLW, L"",
-                                WS_CHILD | WS_CLIPSIBLINGS | WS_VISIBLE | TCS_FOCUSNEVER | TCS_TOOLTIPS | TCS_OWNERDRAWFIXED |
-                                    TCS_MULTILINE,
-                                0, 0, 0, 0, parent, nullptr, hInstance, nullptr);
-    SendMessageW(tabHwnd_, WM_SETFONT, reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)), TRUE);
-    TabCtrl_SetMinTabWidth(tabHwnd_, 120);  // room for a readable label plus the close glyph
+    // A plain, self-drawn child window - see FilePaneTabs.cpp for why
+    // this isn't SysTabControl32 (WC_TABCONTROLW) any more. Everything
+    // SysTabControl32 used to give for free - hit-testing, wrapping onto
+    // more rows, drawing, selection - is now this pane's own job; see
+    // relayoutTabs/hitTestTab/drawTabItem and TabStripSubclassProc.
+    constexpr wchar_t kTabStripClass[] = L"KestrelTabStrip";
+    static bool tabStripClassRegistered = false;
+    if (!tabStripClassRegistered) {
+        WNDCLASSW wc{};
+        wc.lpfnWndProc = DefWindowProcW;
+        wc.hInstance = hInstance;
+        wc.lpszClassName = kTabStripClass;
+        wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+        tabStripClassRegistered = RegisterClassW(&wc) != 0 || GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
+    }
+    tabHwnd_ = CreateWindowExW(0, kTabStripClass, L"", WS_CHILD | WS_CLIPSIBLINGS | WS_VISIBLE, 0, 0, 0, 0, parent,
+                                nullptr, hInstance, nullptr);
+    // Deferred until after SetWindowSubclass below - sent any earlier, it
+    // would only reach the raw DefWindowProcW (which drops it on the
+    // floor) instead of TabStripSubclassProc's own WM_SETFONT handler.
 
     newTabButton_ = CreateWindowExW(0, L"BUTTON", L"+", WS_CHILD | WS_CLIPSIBLINGS | WS_VISIBLE | BS_PUSHBUTTON, 0, 0, 0, 0, parent,
                                      nullptr, hInstance, nullptr);
@@ -130,11 +137,9 @@ bool FilePane::create(HWND parent, HINSTANCE hInstance, int controlId, int paneI
     initialTab.content.sortAscending = defaultSortAscending_;
     tabs_.push_back(std::move(initialTab));
     activeTab_ = 0;
-    TCITEMW item{};
-    item.mask = TCIF_TEXT;
-    item.pszText = const_cast<LPWSTR>(L"");
-    TabCtrl_InsertItem(tabHwnd_, 0, &item);
     SetWindowSubclass(tabHwnd_, TabStripSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
+    SendMessageW(tabHwnd_, WM_SETFONT, reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)), TRUE);
+    relayoutTabs();
 
     return true;
 }
@@ -145,13 +150,9 @@ void FilePane::setBounds(const RECT& outer) {
     const int w = outer.right - outer.left;
     const int tabStripW = std::max(0, w - kNewTabButtonWidth);
 
-    // TCS_MULTILINE wraps onto more rows as needed, but only figures out
-    // how many once it knows its actual width - so size it once at a
-    // single row's height first, ask how many rows that produced, then
-    // resize to fit them all. Neither step paints an intermediate size;
-    // MainWindow schedules the repaint after all panes have been placed.
-    placeWithoutRedraw(tabHwnd_, outer.left, outer.top, tabStripW, kTabStripHeight);
-    const int tabRows = std::max(1, TabCtrl_GetRowCount(tabHwnd_));
+    tabStripWidth_ = tabStripW;
+    relayoutTabs();  // wraps tabRects_ onto however many rows this width needs
+    const int tabRows = std::max(1, tabRowCount());
     const int tabStripHeight = tabRows * kTabStripHeight;
     placeWithoutRedraw(tabHwnd_, outer.left, outer.top, tabStripW, tabStripHeight);
     placeWithoutRedraw(newTabButton_, outer.left + tabStripW, outer.top, kNewTabButtonWidth, kTabStripHeight);
@@ -218,7 +219,10 @@ void FilePane::handleDirResult(std::unique_ptr<EnumerationResult> result) {
 
     live_.path = pendingNavPath_;
     applyEntries(std::move(result->entries));
-    updateActiveTabLabel();
+    // drawTabItem reads live_.path directly for the active tab's label,
+    // so there's no separate tab-control item text to update here - just
+    // repaint the strip so the new path actually shows.
+    InvalidateRect(tabHwnd_, nullptr, TRUE);
     watcher_.watch(live_.path, parentWnd_, reinterpret_cast<WPARAM>(this));
 
     if (onNavigated) onNavigated(*this);
@@ -439,8 +443,7 @@ void FilePane::selectSingleItemAtClientPoint(POINT pt) {
 
 LRESULT FilePane::handleNotify(NMHDR* nmhdr) {
     if (!nmhdr) return 0;
-    if (nmhdr->hwndFrom == tabHwnd_) return handleTabNotify(nmhdr);
-    if (nmhdr->hwndFrom != hwnd_) return 0;
+    if (nmhdr->hwndFrom != hwnd_) return 0;  // tabHwnd_ is a plain window now - it never sends WM_NOTIFY
 
     switch (nmhdr->code) {
         case LVN_GETDISPINFOW: {

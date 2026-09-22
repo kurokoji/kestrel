@@ -7,6 +7,22 @@
 #include <algorithm>
 #include <unordered_map>
 
+// The tab strip used to be SysTabControl32 (WC_TABCONTROLW) with
+// TCS_MULTILINE. That had to go: comctl32's TCS_MULTILINE always renders
+// whichever row holds the *selected* tab as the bottom-most row, and
+// re-sorts the rows every time TabCtrl_SetCurSel runs (including the one
+// it does internally on a plain click) - so a drag-to-reorder across rows
+// kept fighting that reflow: mid-drag it looked fine (nothing was calling
+// SetCurSel), but the instant selection was touched again - on drag end,
+// or on the next ordinary tab click - the rows visibly snapped back into
+// "selected tab's row last" order, undoing the reorder or scrambling
+// unrelated tabs' rows. There's no documented way to disable that
+// behavior. This file now owns everything SysTabControl32 used to do
+// for free: per-tab rect layout (computeTabLayout/relayoutTabs),
+// hit-testing (hitTestTab/hitTestTabApprox), drawing (drawTabItem), and
+// selection (activeTab_ alone - no separate "control's own selected
+// item" exists to fight with any more).
+
 namespace {
 
 std::wstring tabLabelFor(const std::wstring& path) {
@@ -16,6 +32,8 @@ std::wstring tabLabelFor(const std::wstring& path) {
     return name.empty() ? path : name;  // e.g. "C:\" has nothing after its trailing slash
 }
 
+constexpr int kTabStripHeight = 22;
+constexpr int kTabWidth = 120;  // room for a readable label plus the close glyph
 constexpr int kCloseGlyphSize = 12;
 constexpr int kCloseGlyphMargin = 4;
 
@@ -40,7 +58,7 @@ RECT closeHoverRectFor(const RECT& tabRect) {
 
 constexpr COLORREF kActiveTabAccent = RGB(0, 0, 128);  // matches the app icon's navy
 
-// drawTabItem() paints on every WM_DRAWITEM for the tab strip, so brushes
+// drawTabItem() paints on every WM_PAINT for the tab strip, so brushes
 // for its handful of fixed custom colors (the active-tab underline, each
 // drive badge color) are cached here instead of Create/Delete per paint.
 // Bounded to a small, fixed set of colors (kActiveTabAccent + the
@@ -53,63 +71,144 @@ HBRUSH cachedBrushFor(COLORREF color) {
     return it->second;
 }
 
+constexpr wchar_t kDragGhostClass[] = L"KestrelTabDragGhost";
+
+// Just blits whatever bitmap the owner stashed in GWLP_USERDATA - the
+// snapshot is captured once, at drag start, from the real tab strip.
+LRESULT CALLBACK TabDragGhostProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (msg == WM_ERASEBKGND) return 1;
+    if (msg == WM_PAINT) {
+        PAINTSTRUCT ps{};
+        HDC hdc = BeginPaint(hwnd, &ps);
+        if (HBITMAP bmp = reinterpret_cast<HBITMAP>(GetWindowLongPtrW(hwnd, GWLP_USERDATA))) {
+            BITMAP bm{};
+            GetObject(bmp, sizeof(bm), &bm);
+            HDC memDC = CreateCompatibleDC(hdc);
+            HBITMAP old = static_cast<HBITMAP>(SelectObject(memDC, bmp));
+            BitBlt(hdc, 0, 0, bm.bmWidth, bm.bmHeight, memDC, 0, 0, SRCCOPY);
+            SelectObject(memDC, old);
+            DeleteDC(memDC);
+        }
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
 }  // namespace
 
 // Intercepted on button-DOWN (not click/up) and swallowed when it lands on
-// a tab's close glyph, so the tab control never sees the click and never
-// changes the selection to the tab that's about to disappear.
+// a tab's close glyph, so a click there can't also select the tab that's
+// about to disappear.
 LRESULT CALLBACK FilePane::TabStripSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR /*id*/,
                                        DWORD_PTR refData) {
     auto* pane = reinterpret_cast<FilePane*>(refData);
 
-    if (msg == WM_LBUTTONDOWN) {
+    if (msg == WM_SETFONT) {
+        pane->tabFont_ = reinterpret_cast<HFONT>(wParam);
+        if (LOWORD(lParam)) InvalidateRect(hwnd, nullptr, TRUE);
+        return 0;
+    } else if (msg == WM_GETFONT) {
+        return reinterpret_cast<LRESULT>(pane->tabFont_);
+    } else if (msg == WM_ERASEBKGND) {
+        return 1;  // WM_PAINT below fills the whole client rect itself
+    } else if (msg == WM_PAINT) {
+        PAINTSTRUCT ps{};
+        HDC hdc = BeginPaint(hwnd, &ps);
+        RECT client{};
+        GetClientRect(hwnd, &client);
+        FillRect(hdc, &client, GetSysColorBrush(COLOR_BTNFACE));  // strip background past the last tab
+        for (size_t i = 0; i < pane->tabRects_.size(); ++i) {
+            pane->drawTabItem(hdc, pane->tabRects_[i], static_cast<int>(i));
+        }
+        EndPaint(hwnd, &ps);
+        return 0;
+    } else if (msg == WM_LBUTTONDOWN) {
         POINT pt{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
-        TCHITTESTINFO hit{};
-        hit.pt = pt;
-        const int idx = TabCtrl_HitTest(hwnd, &hit);
+        const int idx = pane->hitTestTab(pt);
         if (idx >= 0) {
-            RECT tabRect{};
-            TabCtrl_GetItemRect(hwnd, idx, &tabRect);
+            const RECT& tabRect = pane->tabRects_[idx];
             RECT closeRect = closeButtonRectFor(tabRect);
             if (PtInRect(&closeRect, pt)) {
                 pane->closeTab(idx);
                 pane->activate();
                 return 0;
             }
+            // Not the close glyph - this press might turn into a
+            // reorder drag; WM_MOUSEMOVE below decides once it crosses
+            // the drag threshold. A plain click (never crossing that
+            // threshold) still needs to select the tab, same as clicking
+            // any tab strip normally would.
+            pane->dragTabIndex_ = idx;
+            pane->dragActive_ = false;
+            pane->dragStartPt_ = pt;
+            pane->switchToTab(idx);
         }
 
-        // Let the native control process the click first, then reassert
-        // focus onto the file list - this is what makes this the active
-        // pane, same as clicking inside its file list would (covers a
-        // tab, its close glyph already handled above, and empty
-        // tab-strip space). Done on both DOWN and UP defensively, since
-        // TCS_FOCUSNEVER's own focus handling isn't documented as tied to
-        // one or the other.
-        const LRESULT result = DefSubclassProc(hwnd, msg, wParam, lParam);
+        // Reassert focus onto the file list - this is what makes this
+        // the active pane, same as clicking inside its file list would
+        // (covers a tab, its close glyph already handled above, and
+        // empty tab-strip space).
         pane->activate();
-        return result;
+        return 0;
     } else if (msg == WM_LBUTTONUP) {
-        const LRESULT result = DefSubclassProc(hwnd, msg, wParam, lParam);
+        if (pane->dragActive_) pane->endTabDrag();
+        pane->dragTabIndex_ = -1;
+        if (GetCapture() == hwnd) ReleaseCapture();
         pane->activate();
-        return result;
+        return 0;
     } else if (msg == WM_MOUSEMOVE) {
         TRACKMOUSEEVENT tme{sizeof(tme), TME_LEAVE, hwnd, 0};
         TrackMouseEvent(&tme);  // re-arm each move; harmless if already tracking
 
         POINT pt{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
-        TCHITTESTINFO hit{};
-        hit.pt = pt;
-        const int idx = TabCtrl_HitTest(hwnd, &hit);
+
+        if ((wParam & MK_LBUTTON) && pane->dragTabIndex_ >= 0) {
+            if (!pane->dragActive_) {
+                const int cx = GetSystemMetrics(SM_CXDRAG);
+                const int cy = GetSystemMetrics(SM_CYDRAG);
+                if (std::abs(pt.x - pane->dragStartPt_.x) > cx || std::abs(pt.y - pane->dragStartPt_.y) > cy) {
+                    pane->dragActive_ = true;
+                    pane->beginTabDrag(pane->dragTabIndex_, pt);
+                    // Once the cursor leaves the tab strip (e.g. down into
+                    // the file list) it stops being this window's mouse
+                    // at all - without an explicit capture, the eventual
+                    // button-up fires on whatever's under the cursor
+                    // instead, so this handler's WM_LBUTTONUP (and its
+                    // endTabDrag()) never runs and the ghost popup is
+                    // left on screen. Capture pins every subsequent mouse
+                    // message to this window regardless of what it's
+                    // over, and WM_CAPTURECHANGED below covers capture
+                    // being stolen out from under the drag.
+                    SetCapture(hwnd);
+                }
+            }
+            if (pane->dragActive_) {
+                const int overIdx = pane->hitTestTabApprox(pt);
+                if (overIdx >= 0 && overIdx != pane->dragTabIndex_) {
+                    pane->moveTab(pane->dragTabIndex_, overIdx);
+                    pane->dragTabIndex_ = overIdx;  // keep tracking the same logical tab as it slides past others
+                }
+                pane->updateTabDragGhost(pt);
+                return 0;  // skip the close-hover hit-test below while mid-drag
+            }
+        }
+
+        const int idx = pane->hitTestTab(pt);
         int hovered = -1;
         if (idx >= 0) {
-            RECT tabRect{};
-            TabCtrl_GetItemRect(hwnd, idx, &tabRect);
-            RECT hoverRect = closeHoverRectFor(tabRect);
+            RECT hoverRect = closeHoverRectFor(pane->tabRects_[idx]);
             if (PtInRect(&hoverRect, pt)) hovered = idx;
         }
         pane->setHoveredCloseTab(hovered);
     } else if (msg == WM_MOUSELEAVE) {
         pane->setHoveredCloseTab(-1);
+    } else if (msg == WM_CAPTURECHANGED) {
+        // Something else stole the mouse capture mid-drag (e.g. a dialog
+        // popped up) - drop the ghost rather than leave it stuck on
+        // screen with no matching button-up ever arriving.
+        if (pane->dragActive_) pane->endTabDrag();
+        pane->dragTabIndex_ = -1;
     }
     return DefSubclassProc(hwnd, msg, wParam, lParam);
 }
@@ -175,13 +274,199 @@ void FilePane::switchToTab(int index) {
     if (index == activeTab_ || index < 0 || index >= static_cast<int>(tabs_.size())) return;
     syncActiveTabIntoStorage();
     loadTabIntoLive(index);
-    TabCtrl_SetCurSel(tabHwnd_, activeTab_);
+    InvalidateRect(tabHwnd_, nullptr, TRUE);
     if (onNavigated) onNavigated(*this);
 }
 
 void FilePane::cycleTab(bool forward) {
     if (tabs_.size() <= 1) return;
     switchToTab(TabCycle::nextIndex(activeTab_, static_cast<int>(tabs_.size()), forward));
+}
+
+void FilePane::beginTabDrag(int index, POINT clientPt) {
+    if (!dragGhost_) {
+        WNDCLASSW wc{};
+        wc.lpfnWndProc = TabDragGhostProc;
+        wc.hInstance = GetModuleHandleW(nullptr);
+        wc.lpszClassName = kDragGhostClass;
+        if (!RegisterClassW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return;
+
+        // Plain opaque popup, not WS_EX_LAYERED - a layered window forces
+        // DWM to recomposite on every SetWindowPos while it follows the
+        // cursor, which visibly lagged. An opaque snapshot moves for free.
+        dragGhost_ = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, kDragGhostClass, L"", WS_POPUP, 0, 0, 0, 0,
+                                     tabHwnd_, nullptr, GetModuleHandleW(nullptr), nullptr);
+    }
+    if (!dragGhost_) return;
+    if (index < 0 || static_cast<size_t>(index) >= tabRects_.size()) return;
+
+    const RECT tabRect = tabRects_[index];
+    const int w = tabRect.right - tabRect.left;
+    const int h = tabRect.bottom - tabRect.top;
+    if (w <= 0 || h <= 0) return;
+
+    HDC srcDC = GetDC(tabHwnd_);
+    HDC memDC = CreateCompatibleDC(srcDC);
+    HBITMAP bmp = CreateCompatibleBitmap(srcDC, w, h);
+    HBITMAP old = static_cast<HBITMAP>(SelectObject(memDC, bmp));
+    BitBlt(memDC, 0, 0, w, h, srcDC, tabRect.left, tabRect.top, SRCCOPY);
+    SelectObject(memDC, old);
+    DeleteDC(memDC);
+    ReleaseDC(tabHwnd_, srcDC);
+
+    if (dragGhostBitmap_) DeleteObject(dragGhostBitmap_);
+    dragGhostBitmap_ = bmp;
+    SetWindowLongPtrW(dragGhost_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(bmp));
+
+    dragGhostOffset_ = {clientPt.x - tabRect.left, clientPt.y - tabRect.top};
+
+    POINT screenOrigin{tabRect.left, tabRect.top};
+    ClientToScreen(tabHwnd_, &screenOrigin);
+    SetWindowPos(dragGhost_, HWND_TOPMOST, screenOrigin.x, screenOrigin.y, w, h,
+                 SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    InvalidateRect(dragGhost_, nullptr, FALSE);
+
+    // The snapshot above is captured *before* this - blanking the real
+    // tab's own slot now that the ghost is ready to stand in for it.
+    // dragActive_ is already true by the time this runs, so the repaint
+    // this triggers paints that rect blank (see drawTabItem).
+    InvalidateRect(tabHwnd_, &tabRect, TRUE);
+}
+
+void FilePane::updateTabDragGhost(POINT clientPt) {
+    if (!dragGhost_) return;
+
+    // Only a reorder within the tab strip is meaningful - once the
+    // cursor leaves it (down into the file list, say), a floating tab
+    // snapshot sitting over unrelated UI just reads as a stray glitch.
+    // Clamp the ghost's own position to the strip's bounds instead of
+    // hiding it, so it stays put at the edge rather than popping in and
+    // out as the cursor wanders back and forth across the boundary.
+    RECT tabClientRect{};
+    GetClientRect(tabHwnd_, &tabClientRect);
+    POINT topLeft{tabClientRect.left, tabClientRect.top};
+    POINT bottomRight{tabClientRect.right, tabClientRect.bottom};
+    ClientToScreen(tabHwnd_, &topLeft);
+    ClientToScreen(tabHwnd_, &bottomRight);
+
+    RECT ghostRect{};
+    GetWindowRect(dragGhost_, &ghostRect);
+    const int gw = ghostRect.right - ghostRect.left;
+    const int gh = ghostRect.bottom - ghostRect.top;
+
+    POINT screenPt = clientPt;
+    ClientToScreen(tabHwnd_, &screenPt);
+    LONG x = screenPt.x - dragGhostOffset_.x;
+    LONG y = screenPt.y - dragGhostOffset_.y;
+    x = std::clamp<LONG>(x, topLeft.x, std::max<LONG>(topLeft.x, bottomRight.x - gw));
+    y = std::clamp<LONG>(y, topLeft.y, std::max<LONG>(topLeft.y, bottomRight.y - gh));
+
+    SetWindowPos(dragGhost_, nullptr, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+}
+
+void FilePane::endTabDrag() {
+    // Resets the drag state itself (not just the ghost) so every call
+    // site can just call this instead of separately remembering to also
+    // clear dragActive_/dragTabIndex_ and repaint the real tab's slot
+    // that was left blank for it.
+    dragActive_ = false;
+    dragTabIndex_ = -1;
+    if (dragGhost_) ShowWindow(dragGhost_, SW_HIDE);
+    if (dragGhostBitmap_) {
+        DeleteObject(dragGhostBitmap_);
+        dragGhostBitmap_ = nullptr;
+    }
+    InvalidateRect(tabHwnd_, nullptr, TRUE);
+}
+
+std::vector<RECT> FilePane::computeTabLayout(int width) const {
+    std::vector<RECT> rects;
+    rects.reserve(tabs_.size());
+    int x = 0, y = 0;
+    for (size_t i = 0; i < tabs_.size(); ++i) {
+        if (x > 0 && x + kTabWidth > width) {
+            x = 0;
+            y += kTabStripHeight;
+        }
+        rects.push_back(RECT{x, y, x + kTabWidth, y + kTabStripHeight});
+        x += kTabWidth;
+    }
+    return rects;
+}
+
+void FilePane::relayoutTabs() {
+    tabRects_ = computeTabLayout(tabStripWidth_);
+}
+
+int FilePane::tabRowCount() const {
+    if (tabRects_.empty()) return 1;
+    return tabRects_.back().top / kTabStripHeight + 1;
+}
+
+int FilePane::hitTestTab(POINT pt) const {
+    for (size_t i = 0; i < tabRects_.size(); ++i) {
+        if (PtInRect(&tabRects_[i], pt)) return static_cast<int>(i);
+    }
+    return -1;
+}
+
+// Used while dragging: a point can land in the strip's trailing margin
+// or between rows, where no tab rect actually covers it - falls back to
+// whichever tab rect is physically nearest, so a drag can still register
+// crossing into a mostly-empty row.
+int FilePane::hitTestTabApprox(POINT pt) const {
+    const int exact = hitTestTab(pt);
+    if (exact >= 0) return exact;
+
+    int best = -1;
+    long long bestDist = 0;
+    for (size_t i = 0; i < tabRects_.size(); ++i) {
+        const RECT& r = tabRects_[i];
+        long dx = 0, dy = 0;
+        if (pt.x < r.left) dx = r.left - pt.x;
+        else if (pt.x >= r.right) dx = pt.x - r.right + 1;
+        if (pt.y < r.top) dy = r.top - pt.y;
+        else if (pt.y >= r.bottom) dy = pt.y - r.bottom + 1;
+        const long long dist = static_cast<long long>(dx) * dx + static_cast<long long>(dy) * dy;
+        if (best < 0 || dist < bestDist) {
+            best = static_cast<int>(i);
+            bestDist = dist;
+        }
+    }
+    return best;
+}
+
+void FilePane::moveTab(int from, int to) {
+    if (from == to || from < 0 || to < 0 || from >= static_cast<int>(tabs_.size()) ||
+        to >= static_cast<int>(tabs_.size())) {
+        return;
+    }
+
+    // Make sure the active tab's stored content (path/entries/sort/etc.)
+    // is current before reindexing it - the active tab's real state lives
+    // in live_, not tabs_, until this runs.
+    syncActiveTabIntoStorage();
+
+    TabState moved = std::move(tabs_[from]);
+    tabs_.erase(tabs_.begin() + from);
+    tabs_.insert(tabs_.begin() + to, std::move(moved));
+
+    // The active tab keeps its identity across the reorder even though
+    // its numeric index shifts.
+    if (activeTab_ == from) {
+        activeTab_ = to;
+    } else if (from < activeTab_ && activeTab_ <= to) {
+        --activeTab_;
+    } else if (to <= activeTab_ && activeTab_ < from) {
+        ++activeTab_;
+    }
+    hoveredCloseTab_ = -1;  // indices just shifted; next WM_MOUSEMOVE recomputes this
+
+    // Tab count and width are unchanged, so this is always the same
+    // fixed-size rects in a new order - never a different row count,
+    // unlike the old SysTabControl32 version of this.
+    relayoutTabs();
+    InvalidateRect(tabHwnd_, nullptr, TRUE);
 }
 
 void FilePane::invalidateTabsMatchingPath(const std::wstring& path) {
@@ -191,15 +476,6 @@ void FilePane::invalidateTabsMatchingPath(const std::wstring& path) {
     }
     if (_wcsicmp(live_.path.c_str(), path.c_str()) == 0) liveMatched = true;
     if (liveMatched) refresh();
-}
-
-void FilePane::updateActiveTabLabel() {
-    if (!tabHwnd_ || tabs_.empty()) return;
-    std::wstring label = tabLabelFor(live_.path);
-    TCITEMW item{};
-    item.mask = TCIF_TEXT;
-    item.pszText = const_cast<LPWSTR>(label.c_str());
-    TabCtrl_SetItem(tabHwnd_, activeTab_, &item);
 }
 
 void FilePane::newTab() {
@@ -212,14 +488,9 @@ void FilePane::newTab() {
     tabs_.push_back(std::move(t));
     const int newIndex = static_cast<int>(tabs_.size()) - 1;
 
-    std::wstring label = tabLabelFor(live_.path);
-    TCITEMW item{};
-    item.mask = TCIF_TEXT;
-    item.pszText = const_cast<LPWSTR>(label.c_str());
-    TabCtrl_InsertItem(tabHwnd_, newIndex, &item);
-    TabCtrl_SetCurSel(tabHwnd_, newIndex);
-
+    relayoutTabs();
     loadTabIntoLive(newIndex);  // starts empty, so this also kicks off the enumeration
+    InvalidateRect(tabHwnd_, nullptr, TRUE);
     if (onTabCountChanged) onTabCountChanged();
 }
 
@@ -230,18 +501,17 @@ void FilePane::closeTab(int index) {
 
     const bool closingActive = (index == activeTab_);
     tabs_.erase(tabs_.begin() + index);
-    TabCtrl_DeleteItem(tabHwnd_, index);
     hoveredCloseTab_ = -1;  // indices just shifted; next WM_MOUSEMOVE recomputes this
+    relayoutTabs();
 
     if (closingActive) {
         const int newIndex = std::min(index, static_cast<int>(tabs_.size()) - 1);
         loadTabIntoLive(newIndex);
-        TabCtrl_SetCurSel(tabHwnd_, newIndex);
         if (onNavigated) onNavigated(*this);
     } else if (activeTab_ > index) {
         --activeTab_;  // a tab before the active one shifted left
-        TabCtrl_SetCurSel(tabHwnd_, activeTab_);
     }
+    InvalidateRect(tabHwnd_, nullptr, TRUE);
     if (onTabCountChanged) onTabCountChanged();
 }
 
@@ -257,55 +527,42 @@ void FilePane::restoreTabs(const std::vector<std::wstring>& paths, int activeInd
     if (paths.empty()) return;
 
     tabs_.clear();
-    TabCtrl_DeleteAllItems(tabHwnd_);
-
-    for (size_t i = 0; i < paths.size(); ++i) {
+    for (const auto& path : paths) {
         TabState t;
-        t.content.path = paths[i];
+        t.content.path = path;
         t.content.sortColumn = defaultSortColumn_;
         t.content.sortAscending = defaultSortAscending_;
         tabs_.push_back(std::move(t));
-
-        std::wstring label = tabLabelFor(paths[i]);
-        TCITEMW item{};
-        item.mask = TCIF_TEXT;
-        item.pszText = const_cast<LPWSTR>(label.c_str());
-        TabCtrl_InsertItem(tabHwnd_, static_cast<int>(i), &item);
     }
 
+    relayoutTabs();
     const int idx = std::clamp(activeIndex, 0, static_cast<int>(tabs_.size()) - 1);
-    TabCtrl_SetCurSel(tabHwnd_, idx);
     loadTabIntoLive(idx);  // entries start empty, so this kicks off enumeration for the active tab
-}
-
-LRESULT FilePane::handleTabNotify(NMHDR* nmhdr) {
-    switch (nmhdr->code) {
-        case TCN_SELCHANGE:
-            switchToTab(TabCtrl_GetCurSel(tabHwnd_));
-            return 0;
-        default:
-            return 0;
-    }
+    InvalidateRect(tabHwnd_, nullptr, TRUE);
 }
 
 void FilePane::setHoveredCloseTab(int index) {
     if (index == hoveredCloseTab_) return;
 
     auto invalidateTab = [this](int idx) {
-        if (idx < 0) return;
-        RECT r{};
-        TabCtrl_GetItemRect(tabHwnd_, idx, &r);
-        InvalidateRect(tabHwnd_, &r, FALSE);
+        if (idx < 0 || static_cast<size_t>(idx) >= tabRects_.size()) return;
+        InvalidateRect(tabHwnd_, &tabRects_[idx], FALSE);
     };
     invalidateTab(hoveredCloseTab_);
     hoveredCloseTab_ = index;
     invalidateTab(hoveredCloseTab_);
 }
 
-void FilePane::drawTabItem(const DRAWITEMSTRUCT& dis) {
-    HDC hdc = dis.hDC;
-    const RECT r = dis.rcItem;
-    const bool selected = (dis.itemState & ODS_SELECTED) != 0;
+void FilePane::drawTabItem(HDC hdc, const RECT& r, int index) {
+    const bool selected = (index == activeTab_);
+
+    if (dragActive_ && index == dragTabIndex_) {
+        // The real tab's own slot sits blank while its snapshot ghost is
+        // being dragged around - otherwise the same label would visibly
+        // show twice, once for real and once floating under the cursor.
+        FillRect(hdc, &r, GetSysColorBrush(COLOR_BTNFACE));
+        return;
+    }
 
     FillRect(hdc, &r, GetSysColorBrush(selected ? COLOR_WINDOW : COLOR_BTNFACE));
 
@@ -314,14 +571,12 @@ void FilePane::drawTabItem(const DRAWITEMSTRUCT& dis) {
         FillRect(hdc, &underline, cachedBrushFor(kActiveTabAccent));
     }
 
-    wchar_t buf[128] = {};
-    TCITEMW item{};
-    item.mask = TCIF_TEXT;
-    item.pszText = buf;
-    item.cchTextMax = ARRAYSIZE(buf);
-    TabCtrl_GetItem(tabHwnd_, dis.itemID, &item);
+    const std::wstring& tabPath = (index == activeTab_) ? live_.path
+                                   : (index >= 0 && static_cast<size_t>(index) < tabs_.size()) ? tabs_[index].content.path
+                                                                                                : std::wstring{};
+    const std::wstring label = tabLabelFor(tabPath);
 
-    HFONT font = reinterpret_cast<HFONT>(SendMessageW(tabHwnd_, WM_GETFONT, 0, 0));
+    HFONT font = tabFont_ ? tabFont_ : static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
     HFONT old = static_cast<HFONT>(SelectObject(hdc, font));
     SetBkMode(hdc, TRANSPARENT);
 
@@ -329,10 +584,6 @@ void FilePane::drawTabItem(const DRAWITEMSTRUCT& dis) {
     textRect.left += 6;
     textRect.right -= (kCloseGlyphSize + kCloseGlyphMargin * 2);
 
-    const int idx = static_cast<int>(dis.itemID);
-    const std::wstring& tabPath = (idx == activeTab_) ? live_.path
-                                   : (idx >= 0 && static_cast<size_t>(idx) < tabs_.size()) ? tabs_[idx].content.path
-                                                                                            : std::wstring{};
     if (auto drive = DriveBadge::driveLetterOf(tabPath)) {
         const std::wstring badgeText(1, *drive);
         SIZE badgeTextSize{};
@@ -353,10 +604,10 @@ void FilePane::drawTabItem(const DRAWITEMSTRUCT& dis) {
     }
 
     SetTextColor(hdc, GetSysColor(COLOR_WINDOWTEXT));
-    DrawTextW(hdc, buf, -1, &textRect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    DrawTextW(hdc, label.c_str(), -1, &textRect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 
     if (tabs_.size() > 1) {
-        const bool hovered = (static_cast<int>(dis.itemID) == hoveredCloseTab_);
+        const bool hovered = (index == hoveredCloseTab_);
         if (hovered) {
             RECT hoverRect = closeHoverRectFor(r);
             HRGN rgn = CreateRoundRectRgn(hoverRect.left, hoverRect.top, hoverRect.right + 1, hoverRect.bottom + 1, 4, 4);
@@ -370,4 +621,3 @@ void FilePane::drawTabItem(const DRAWITEMSTRUCT& dis) {
 
     SelectObject(hdc, old);
 }
-
