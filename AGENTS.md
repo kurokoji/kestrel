@@ -159,6 +159,51 @@ commit - don't let it drift out of sync with what the app actually does.
   previous thread - this is relied on deliberately in `DirectoryModel`
   and `DirectoryWatcher` as the "cancel and restart" mechanism. Don't
   "simplify" that into a raw `std::thread` without re-adding cancellation.
+- **`FilePane`'s `watcher_` is one `DirectoryWatcher` instance per pane,
+  not per tab, and it's only re-armed inside `handleDirResult` (i.e. on
+  an actual `navigate()`).** `switchToTab`/`loadTabIntoLive` restore a
+  cached tab's `entries` straight from `tabs_` without calling
+  `navigate()` when that cache is non-empty, so switching tabs does
+  *not* re-arm the watcher onto the newly-live tab's path - it keeps
+  watching whatever path it last actually navigated to, which can now be
+  a completely different (background) tab's folder. A cut-then-move
+  paste especially exposed this: the *source* folder's watch may not be
+  live at the moment the move actually happens (it's watching whichever
+  tab was live last), so nothing ever notices the moved-away item is
+  gone, and simply re-arming the watcher on tab switch wouldn't have
+  fixed it either - by the time you switch back to the source tab the
+  removal already happened unobserved, and `loadTabIntoLive` still just
+  restores the stale cached `entries` without re-enumerating. The actual
+  fix has to be pinned to the move itself, not tab-switch timing:
+  `MainWindow::doClipboardPaste` calls the new
+  `FilePane::invalidateTabsMatchingPath` (both panes, for each moved
+  item's parent dir) right after a successful move, which clears that
+  path's cached `entries` in any matching tab (forcing a fresh
+  `navigate()` next time it's switched to) and immediately `refresh()`es
+  it if it's a pane's *live* tab. `MainWindow::doMoveToOther` doesn't
+  need this - it already `refresh()`es both panes' live tabs directly -
+  but still leaves the same background-tab-cache staleness for any
+  *other*, non-live tab sitting on the source folder; not fixed, since
+  nothing currently exercises it.
+- **Dimming a ListView icon (cut-file fade) via `ImageList_DrawEx`'s
+  `ILD_BLEND50`/`ILD_BLEND25` visibly does nothing on modern shell
+  icons.** Those blend flags mix the icon against a solid color, but
+  today's shell icons carry their own real alpha channel and mostly
+  ignore that blend - drawing it once, twice, whatever, looks identical.
+  Also, painting *any* translucent version on top from
+  `CDDS_ITEMPOSTPAINT` is a no-op if you skip clearing first: comctl32
+  already drew the icon at full opacity during its own default draw
+  (POSTPAINT fires *after* that), so a translucent copy layered on top
+  of the opaque one still reads as opaque. The fix needs both pieces:
+  `FillRect` the icon's `LVIR_ICON` rect back to the row's real
+  background color (selected/search-highlight/plain - has to match
+  whatever `CDDS_ITEMPREPAINT` decided that row's background is, or the
+  erase itself looks wrong) to actually erase the opaque icon, *then*
+  draw the dimmed one into the now-empty space via GDI+
+  (`Gdiplus::Bitmap` from `ImageList_GetIcon`, a `ColorMatrix` scaling
+  just the alpha row, `Graphics::DrawImage`) - GDI+ correctly respects
+  the icon's real alpha this way, unlike `ImageList_DrawEx`. See
+  `FilePane::handleNotify`'s `NM_CUSTOMDRAW`/`CDDS_ITEMPOSTPAINT` case.
 
 ## Testing in this sandbox (if you're doing UI verification)
 

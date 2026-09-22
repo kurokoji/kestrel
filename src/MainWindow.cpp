@@ -15,6 +15,7 @@
 #include <windowsx.h>
 
 #include <algorithm>
+#include <filesystem>
 #include <format>
 #include <memory>
 #include <optional>
@@ -730,7 +731,14 @@ void MainWindow::doMoveToOther() {
 }
 
 void MainWindow::doClipboardCopy(bool cut) {
-    ClipboardFiles::set(hwnd_, activePane().selectedPaths(), cut);
+    auto paths = activePane().selectedPaths();
+    ClipboardFiles::set(hwnd_, paths, cut);
+    // Only one pane's items can be the pending cut at a time - a fresh
+    // cut/copy anywhere supersedes whatever was marked before, in either
+    // pane, so the dimmed-icon mark can't linger on stale items.
+    left_.clearCutPaths();
+    right_.clearCutPaths();
+    if (cut) activePane().setCutPaths(std::move(paths));
 }
 
 void MainWindow::doClipboardPaste() {
@@ -738,7 +746,27 @@ void MainWindow::doClipboardPaste() {
     if (!cf) return;
     const bool ok = cf->move ? FileOperations::moveItems(hwnd_, cf->paths, activePane().currentPath())
                               : FileOperations::copyItems(hwnd_, cf->paths, activePane().currentPath());
-    if (ok) activePane().refresh();
+    if (ok) {
+        if (cf->move) {
+            left_.clearCutPaths();
+            right_.clearCutPaths();
+            // The moved-away items' source folder(s) may be sitting
+            // cached in some other tab (or the other pane's live tab) -
+            // that tab's own DirectoryWatcher isn't the one that just
+            // saw this move, so it would otherwise keep showing the
+            // items as still there. See invalidateTabsMatchingPath.
+            std::vector<std::wstring> sourceDirs;
+            for (const auto& p : cf->paths) {
+                std::wstring dir = std::filesystem::path(p).parent_path().wstring();
+                if (std::ranges::find(sourceDirs, dir) == sourceDirs.end()) sourceDirs.push_back(std::move(dir));
+            }
+            for (const auto& dir : sourceDirs) {
+                left_.invalidateTabsMatchingPath(dir);
+                right_.invalidateTabsMatchingPath(dir);
+            }
+        }
+        activePane().refresh();
+    }
 }
 
 void MainWindow::onAddressBarEnter() {

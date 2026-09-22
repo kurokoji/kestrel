@@ -184,6 +184,15 @@ void FilePane::cycleTab(bool forward) {
     switchToTab(TabCycle::nextIndex(activeTab_, static_cast<int>(tabs_.size()), forward));
 }
 
+void FilePane::invalidateTabsMatchingPath(const std::wstring& path) {
+    bool liveMatched = false;
+    for (auto& t : tabs_) {
+        if (_wcsicmp(t.content.path.c_str(), path.c_str()) == 0) t.content.entries.clear();
+    }
+    if (_wcsicmp(live_.path.c_str(), path.c_str()) == 0) liveMatched = true;
+    if (liveMatched) refresh();
+}
+
 void FilePane::updateActiveTabLabel() {
     if (!tabHwnd_ || tabs_.empty()) return;
     std::wstring label = tabLabelFor(live_.path);

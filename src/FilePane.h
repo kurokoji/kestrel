@@ -123,6 +123,24 @@ public:
 
     bool hasSelection() const { return ListView_GetSelectedCount(hwnd_) > 0; }
 
+    // "Cut" visual marking (Explorer-style dimmed icon) for items awaiting
+    // a move-paste. Paths are matched case-insensitively against this
+    // pane's own entries at paint time - MainWindow owns clearing this on
+    // copy/paste so it never lingers once the clipboard's contents move on.
+    void setCutPaths(std::vector<std::wstring> paths);
+    void clearCutPaths();
+
+    // Called by MainWindow right after a cross-pane/cross-tab move so the
+    // *source* folder's listing doesn't go stale. watcher_ is one instance
+    // per pane, re-armed only on navigate() - a tab holding a cached
+    // (non-live, or live-but-not-this-pane) listing of that source folder
+    // never gets re-armed on the file's actual removal, so it would
+    // otherwise keep showing the moved-away item until something else
+    // happens to touch that folder. Clears any tab's cached entries for
+    // `path` (forcing re-enumeration next time it's switched to) and, if
+    // `path` is this pane's live tab, refreshes it immediately.
+    void invalidateTabsMatchingPath(const std::wstring& path);
+
     // Right-click context-menu support: if `pt` (client coords) lands on
     // an item that ISN'T already part of the selection, replace the
     // selection with just that item (matches Explorer); right-clicking an
@@ -219,6 +237,8 @@ private:
 
     std::vector<TabState> tabs_;
     int activeTab_ = 0;
+
+    std::vector<std::wstring> cutPaths_;  // lowercased full paths
 
     static inline int defaultSortColumn_ = 0;
     static inline bool defaultSortAscending_ = true;

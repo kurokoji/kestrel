@@ -6,6 +6,8 @@
 #include "IconCache.h"
 
 #include <windowsx.h>
+#include <objidl.h>  // must precede gdiplus.h - see AGENTS.md
+#include <gdiplus.h>
 
 #include <algorithm>
 #include <filesystem>
@@ -22,6 +24,11 @@ std::wstring joinPath(const std::wstring& dir, const std::wstring& name) {
     if (!full.empty() && full.back() != L'\\') full += L'\\';
     full += name;
     return full;
+}
+
+std::wstring lowercaseCopy(std::wstring s) {
+    std::ranges::transform(s, s.begin(), ::towlower);
+    return s;
 }
 
 constexpr int kTabStripHeight = 22;
@@ -280,6 +287,19 @@ std::vector<std::wstring> FilePane::selectedPaths() const {
     return result;
 }
 
+void FilePane::setCutPaths(std::vector<std::wstring> paths) {
+    cutPaths_.clear();
+    cutPaths_.reserve(paths.size());
+    for (auto& p : paths) cutPaths_.push_back(lowercaseCopy(std::move(p)));
+    InvalidateRect(hwnd_, nullptr, FALSE);
+}
+
+void FilePane::clearCutPaths() {
+    if (cutPaths_.empty()) return;
+    cutPaths_.clear();
+    InvalidateRect(hwnd_, nullptr, FALSE);
+}
+
 std::wstring FilePane::focusedItemPath() const {
     const int idx = ListView_GetNextItem(hwnd_, -1, LVNI_FOCUSED);
     if (idx < 0) return L"";
@@ -530,7 +550,9 @@ LRESULT FilePane::handleNotify(NMHDR* nmhdr) {
             auto* cd = reinterpret_cast<NMLVCUSTOMDRAW*>(nmhdr);
             switch (cd->nmcd.dwDrawStage) {
                 case CDDS_PREPAINT:
-                    return (searchQuery_.empty() && currentMatchIndex_ < 0) ? CDRF_DODEFAULT : CDRF_NOTIFYITEMDRAW;
+                    return (searchQuery_.empty() && currentMatchIndex_ < 0 && cutPaths_.empty())
+                               ? CDRF_DODEFAULT
+                               : CDRF_NOTIFYITEMDRAW;
                 case CDDS_ITEMPREPAINT: {
                     const int idx = static_cast<int>(cd->nmcd.dwItemSpec);
                     if (idx == currentMatchIndex_) {
@@ -542,6 +564,57 @@ LRESULT FilePane::handleNotify(NMHDR* nmhdr) {
                         cd->clrText = GetSysColor(COLOR_HIGHLIGHTTEXT);
                     } else if (idx >= 0 && static_cast<size_t>(idx) < live_.entries.size() && matchesSearch(live_.entries[idx])) {
                         cd->clrTextBk = RGB(255, 244, 160);  // pale yellow, like a highlighter
+                    }
+                    if (idx >= 0 && static_cast<size_t>(idx) < live_.entries.size() && !cutPaths_.empty()) {
+                        const std::wstring full = lowercaseCopy(joinPath(live_.path, live_.entries[idx].name));
+                        if (std::ranges::find(cutPaths_, full) != cutPaths_.end()) return CDRF_NOTIFYPOSTPAINT;
+                    }
+                    return CDRF_DODEFAULT;
+                }
+                case CDDS_ITEMPOSTPAINT: {
+                    // Explorer dims a cut item's icon (but not its label) to
+                    // show it's a pending move. comctl32 has already drawn
+                    // the icon at full opacity by this point (POSTPAINT
+                    // fires after the default draw), so painting a
+                    // translucent copy on top of it would still show the
+                    // opaque one showing through underneath - erase the
+                    // icon rect back to the row's background first, then
+                    // draw the dimmed icon into the cleared space.
+                    const int idx = static_cast<int>(cd->nmcd.dwItemSpec);
+                    RECT iconRect{};
+                    if (idx >= 0 && static_cast<size_t>(idx) < live_.entries.size() &&
+                        ListView_GetItemRect(hwnd_, idx, &iconRect, LVIR_ICON)) {
+                        const FileEntry& e = live_.entries[idx];
+                        const int iImage = e.isDirectory() ? IconCache::instance().iconForPath(joinPath(live_.path, e.name))
+                                                            : IconCache::instance().iconForFile(e.extension);
+                        HIMAGELIST himl = ListView_GetImageList(hwnd_, LVSIL_SMALL);
+                        const bool selected = (ListView_GetItemState(hwnd_, idx, LVIS_SELECTED) & LVIS_SELECTED) != 0;
+                        const bool isMatch = matchesSearch(e);
+                        const COLORREF bg = (idx == currentMatchIndex_ || selected) ? GetSysColor(COLOR_HIGHLIGHT)
+                                             : isMatch                              ? RGB(255, 244, 160)
+                                                                                    : GetSysColor(COLOR_WINDOW);
+                        HBRUSH bgBrush = CreateSolidBrush(bg);
+                        FillRect(cd->nmcd.hdc, &iconRect, bgBrush);
+                        DeleteObject(bgBrush);
+                        HICON hIcon = himl ? ImageList_GetIcon(himl, iImage, ILD_TRANSPARENT) : nullptr;
+                        if (hIcon) {
+                            Gdiplus::Bitmap bmp(hIcon);
+                            Gdiplus::Graphics g(cd->nmcd.hdc);
+                            Gdiplus::ColorMatrix matrix = {
+                                1, 0, 0, 0, 0,
+                                0, 1, 0, 0, 0,
+                                0, 0, 1, 0, 0,
+                                0, 0, 0, 0.5f, 0,
+                                0, 0, 0, 0, 1,
+                            };
+                            Gdiplus::ImageAttributes attr;
+                            attr.SetColorMatrix(&matrix);
+                            const UINT w = bmp.GetWidth();
+                            const UINT h = bmp.GetHeight();
+                            Gdiplus::Rect dest(iconRect.left, iconRect.top, static_cast<INT>(w), static_cast<INT>(h));
+                            g.DrawImage(&bmp, dest, 0, 0, static_cast<INT>(w), static_cast<INT>(h), Gdiplus::UnitPixel, &attr);
+                            DestroyIcon(hIcon);
+                        }
                     }
                     return CDRF_DODEFAULT;
                 }
