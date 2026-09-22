@@ -45,7 +45,12 @@ commit - don't let it drift out of sync with what the app actually does.
 
 - `build.bat` in the repo root loads the VS dev environment and runs
   `cmake` (Ninja generator) + `cmake --build`. Use it as-is; don't assume
-  `cl`/`cmake` are on PATH without it.
+  `cl`/`cmake` are on PATH without it. It resolves the repo path from
+  `%~dp0` (its own location), not a hardcoded path - keep it that way so
+  it still works after a clone to a different user/path. The VS
+  Community 18 install path is still hardcoded (no portable way to probe
+  that without `vswhere`/an env var, and it wasn't worth the complexity
+  for a single-dev-machine build script).
 - Before rebuilding, kill any running `kestrel.exe` first (`Stop-Process
   -Name kestrel -Force`) - the linker fails with `LNK1104` if the old exe
   is still locked by a running process.
