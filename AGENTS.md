@@ -459,3 +459,21 @@ commit - don't let it drift out of sync with what the app actually does.
   `extensionIcons_`. Deliberately not merged into `iconForDirectory`:
   that one stays a single fast cached lookup for the plain "no real path
   available yet" case.
+- The default sort column/direction setting (Tools > Options > 並び順
+  (既定)) is deliberately scoped to *new* tabs only - `FilePane::
+  setDefaultSort` is a static (both panes share one process-wide default)
+  consulted only at the three points a `TabState`/its `TabContent` is
+  freshly constructed (`create()`'s initial tab, `newTab()`,
+  `restoreTabs()`'s per-path loop). It does not re-sort already-open
+  tabs, matching how each tab's own sort state already behaves as
+  independent/sticky (clicking a column header only ever affects that
+  one tab, per the existing "タブ" feature note above). `MainWindow`
+  mirrors the static as `sortColumn_`/`sortAscending_` purely to drive
+  the settings submenu's `CheckMenuRadioItem`/`CheckMenuItem` marks and
+  to persist it (`SessionData::defaultSortColumn/defaultSortAscending`,
+  the `"O"` session record) - `applyDefaultSort()` is the single place
+  that updates all three (the static, the menu, and what gets saved) so
+  they can't drift apart. Column index convention (0=Name, 1=Type,
+  2=Size, 3=Modified) matches the existing `LVN_COLUMNCLICK`/
+  `FileEntrySort::sort` convention already used for the interactive
+  per-tab sort, not a separate numbering.

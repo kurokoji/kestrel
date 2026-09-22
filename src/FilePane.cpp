@@ -118,7 +118,10 @@ bool FilePane::create(HWND parent, HINSTANCE hInstance, int controlId, int paneI
         ListView_InsertColumn(hwnd_, i, &col);
     }
 
-    tabs_.push_back(TabState{});
+    TabState initialTab;
+    initialTab.content.sortColumn = defaultSortColumn_;
+    initialTab.content.sortAscending = defaultSortAscending_;
+    tabs_.push_back(std::move(initialTab));
     activeTab_ = 0;
     TCITEMW item{};
     item.mask = TCIF_TEXT;
@@ -320,6 +323,11 @@ void FilePane::openFocusedOrSelected() {
     int idx = ListView_GetNextItem(hwnd_, -1, LVNI_FOCUSED);
     if (idx < 0) idx = ListView_GetNextItem(hwnd_, -1, LVNI_SELECTED);
     if (idx >= 0) activateEntry(idx);
+}
+
+void FilePane::setDefaultSort(int column, bool ascending) {
+    defaultSortColumn_ = column;
+    defaultSortAscending_ = ascending;
 }
 
 std::array<int, 4> FilePane::columnWidths() const {

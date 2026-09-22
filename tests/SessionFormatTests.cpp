@@ -29,6 +29,8 @@ TEST_CASE("serialize then parseContent round-trips a full SessionData") {
     data.fontFamily = L"Consolas";
     data.fontSize = 11;
     data.fontBold = true;
+    data.defaultSortColumn = 3;
+    data.defaultSortAscending = false;
 
     const std::wstring serialized = SessionFormat::serialize(data);
     const SessionData parsed = SessionFormat::parseContent(serialized);
@@ -52,6 +54,14 @@ TEST_CASE("serialize then parseContent round-trips a full SessionData") {
     CHECK(parsed.fontFamily == L"Consolas");
     CHECK(parsed.fontSize == 11);
     CHECK(parsed.fontBold == true);
+    CHECK(parsed.defaultSortColumn == 3);
+    CHECK(parsed.defaultSortAscending == false);
+}
+
+TEST_CASE("parseContent falls back to default sort column/direction when absent") {
+    const SessionData data = SessionFormat::parseContent(L"T\t0\tC:\\ok\n");
+    CHECK(data.defaultSortColumn == 0);
+    CHECK(data.defaultSortAscending == true);
 }
 
 TEST_CASE("parseContent falls back to default column widths when absent") {

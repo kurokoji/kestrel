@@ -45,6 +45,7 @@ private:
     bool forwardToAddressBar(HWND focus, UINT msg, WPARAM wParam, LPARAM lParam);
     void chooseFont();
     void applyFont(const LOGFONTW& lf);
+    void applyDefaultSort(int column, bool ascending);
     LRESULT onNotify(LPARAM lParam);
     void onPaint();
     void onContextMenu(HWND target, int screenX, int screenY);
@@ -87,6 +88,13 @@ private:
     std::wstring fontFamily_;  // empty = no override, matches SessionData's convention
     int fontSize_ = 0;
     bool fontBold_ = false;
+
+    // Sort column/direction new tabs start out with (Tools > Options >
+    // 並び順(既定)) - mirrors FilePane::setDefaultSort's static state so
+    // the menu's radio/checkbox marks can be kept in sync.
+    HMENU sortMenu_ = nullptr;
+    int sortColumn_ = 0;
+    bool sortAscending_ = true;
 
     TreePane tree_;
     PreviewPane preview_;

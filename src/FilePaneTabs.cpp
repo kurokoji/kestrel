@@ -198,6 +198,8 @@ void FilePane::newTab() {
 
     TabState t;
     t.content.path = live_.path;  // new tab starts out at the same folder
+    t.content.sortColumn = defaultSortColumn_;
+    t.content.sortAscending = defaultSortAscending_;
     tabs_.push_back(std::move(t));
     const int newIndex = static_cast<int>(tabs_.size()) - 1;
 
@@ -251,6 +253,8 @@ void FilePane::restoreTabs(const std::vector<std::wstring>& paths, int activeInd
     for (size_t i = 0; i < paths.size(); ++i) {
         TabState t;
         t.content.path = paths[i];
+        t.content.sortColumn = defaultSortColumn_;
+        t.content.sortAscending = defaultSortAscending_;
         tabs_.push_back(std::move(t));
 
         std::wstring label = tabLabelFor(paths[i]);

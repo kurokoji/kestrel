@@ -40,6 +40,12 @@ struct SessionData {
     std::wstring fontFamily;
     int fontSize = 0;
     bool fontBold = false;
+
+    // Sort column/direction newly created tabs start out with (Tools >
+    // Options). Column index matches FilePane's ListView order: 0=Name,
+    // 1=Type, 2=Size, 3=Modified. Does not affect already-open tabs.
+    int defaultSortColumn = 0;
+    bool defaultSortAscending = true;
 };
 
 namespace Session {

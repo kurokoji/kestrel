@@ -66,6 +66,9 @@ SessionData parseContent(const std::wstring& content) {
                     data.fontFamily = f[1];
                     data.fontSize = std::stoi(f[2]);
                     data.fontBold = (f[3] == L"1");
+                } else if (f[0] == L"O" && f.size() >= 3) {
+                    data.defaultSortColumn = std::stoi(f[1]);
+                    data.defaultSortAscending = (f[2] == L"1");
                 }
             } catch (...) {
                 // Malformed line (hand-edited file, corruption, a future
@@ -100,6 +103,8 @@ std::wstring serialize(const SessionData& data) {
     if (!data.fontFamily.empty()) {
         out += std::format(L"F\t{}\t{}\t{}\n", data.fontFamily, data.fontSize, data.fontBold ? 1 : 0);
     }
+
+    out += std::format(L"O\t{}\t{}\n", data.defaultSortColumn, data.defaultSortAscending ? 1 : 0);
 
     return out;
 }

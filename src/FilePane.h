@@ -91,6 +91,13 @@ public:
     std::array<int, 4> columnWidths() const;
     void setColumnWidths(const std::array<int, 4>& widths);
 
+    // Sort column/direction newly created tabs start out with (Tools >
+    // Options). Shared process-wide (both panes' new tabs use the same
+    // default) rather than per-pane; does not touch already-open tabs'
+    // own sort state. `column` matches the ListView order: 0=Name,
+    // 1=Type, 2=Size, 3=Modified.
+    static void setDefaultSort(int column, bool ascending);
+
     // Called by MainWindow once it receives WM_APP_DIR_RESULT addressed to
     // this pane (the pane pointer travels as the message's wParam).
     void handleDirResult(std::unique_ptr<EnumerationResult> result);
@@ -212,4 +219,7 @@ private:
 
     std::vector<TabState> tabs_;
     int activeTab_ = 0;
+
+    static inline int defaultSortColumn_ = 0;
+    static inline bool defaultSortAscending_ = true;
 };

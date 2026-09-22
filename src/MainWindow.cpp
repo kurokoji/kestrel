@@ -275,7 +275,20 @@ void MainWindow::saveSession() {
     data.fontSize = fontSize_;
     data.fontBold = fontBold_;
 
+    data.defaultSortColumn = sortColumn_;
+    data.defaultSortAscending = sortAscending_;
+
     Session::save(data);
+}
+
+void MainWindow::applyDefaultSort(int column, bool ascending) {
+    sortColumn_ = column;
+    sortAscending_ = ascending;
+    FilePane::setDefaultSort(sortColumn_, sortAscending_);
+
+    static constexpr UINT kColumnIds[] = {IDM_SORT_NAME, IDM_SORT_TYPE, IDM_SORT_SIZE, IDM_SORT_MODIFIED};
+    CheckMenuRadioItem(sortMenu_, IDM_SORT_NAME, IDM_SORT_MODIFIED, kColumnIds[sortColumn_], MF_BYCOMMAND);
+    CheckMenuItem(sortMenu_, IDM_SORT_DESCENDING, MF_BYCOMMAND | (sortAscending_ ? MF_UNCHECKED : MF_CHECKED));
 }
 
 void MainWindow::chooseFont() {
@@ -337,6 +350,13 @@ void MainWindow::onCreate() {
     createToolbar();
     createAddressBar();
     createStatusBar();
+
+    // Before any pane is created, so its very first tab already starts
+    // out with the configured default (FilePane::create() pushes an
+    // initial tab using whatever FilePane::setDefaultSort was last called
+    // with).
+    applyDefaultSort(pendingSession_ ? pendingSession_->defaultSortColumn : 0,
+                      pendingSession_ ? pendingSession_->defaultSortAscending : true);
 
     tree_.create(hwnd_, hInstance_, IDC_TREE);
     preview_.create(hwnd_, hInstance_, IDC_PREVIEW);
@@ -469,6 +489,15 @@ void MainWindow::createMenuBar() {
 
     HMENU settingsMenu = CreatePopupMenu();
     AppendMenuW(settingsMenu, MF_STRING, IDM_TOOLS_FONT, L"フォント(&F)...");
+
+    sortMenu_ = CreatePopupMenu();
+    AppendMenuW(sortMenu_, MF_STRING, IDM_SORT_NAME, L"名前(&N)");
+    AppendMenuW(sortMenu_, MF_STRING, IDM_SORT_TYPE, L"種類(&T)");
+    AppendMenuW(sortMenu_, MF_STRING, IDM_SORT_SIZE, L"サイズ(&S)");
+    AppendMenuW(sortMenu_, MF_STRING, IDM_SORT_MODIFIED, L"更新日時(&M)");
+    AppendMenuW(sortMenu_, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(sortMenu_, MF_STRING, IDM_SORT_DESCENDING, L"降順を既定にする(&D)");
+    AppendMenuW(settingsMenu, MF_POPUP, reinterpret_cast<UINT_PTR>(sortMenu_), L"並び順(既定)(&O)");
 
     HMENU toolsMenu = CreatePopupMenu();
     AppendMenuW(toolsMenu, MF_POPUP, reinterpret_cast<UINT_PTR>(settingsMenu), L"設定(&S)");
@@ -872,6 +901,22 @@ void MainWindow::onCommand(int id, HWND ctrl) {
 
         case IDM_TOOLS_FONT:
             chooseFont();
+            break;
+
+        case IDM_SORT_NAME:
+            applyDefaultSort(0, sortAscending_);
+            break;
+        case IDM_SORT_TYPE:
+            applyDefaultSort(1, sortAscending_);
+            break;
+        case IDM_SORT_SIZE:
+            applyDefaultSort(2, sortAscending_);
+            break;
+        case IDM_SORT_MODIFIED:
+            applyDefaultSort(3, sortAscending_);
+            break;
+        case IDM_SORT_DESCENDING:
+            applyDefaultSort(sortColumn_, !sortAscending_);
             break;
         case IDM_HELP_ABOUT:
             MessageBoxW(hwnd_, L"Kestrel Filer\n軽量な Win32 ファイラーです。", L"Kestrelについて",

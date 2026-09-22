@@ -32,6 +32,11 @@
 #define IDM_TAB_PREV               1308
 
 #define IDM_TOOLS_FONT             1401
+#define IDM_SORT_NAME              1402
+#define IDM_SORT_TYPE              1403
+#define IDM_SORT_SIZE              1404
+#define IDM_SORT_MODIFIED          1405
+#define IDM_SORT_DESCENDING        1406
 
 #define IDM_HELP_ABOUT             1501
 
