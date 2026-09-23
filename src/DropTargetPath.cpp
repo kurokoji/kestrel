@@ -54,4 +54,10 @@ bool isOntoSource(const std::vector<std::wstring>& sources, const std::wstring& 
     return false;
 }
 
+bool isDraggableFolder(const std::wstring& path) {
+    if (path.empty() || path.starts_with(L"::")) return false;
+    const bool driveRoot = path.size() <= 3 && path.size() >= 2 && path[1] == L':';
+    return !driveRoot;
+}
+
 }  // namespace DropTargetPath

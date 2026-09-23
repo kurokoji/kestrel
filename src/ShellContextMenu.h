@@ -10,26 +10,24 @@ struct IContextMenu;   // avoids pulling <shobjidl.h> into every includer of thi
 struct IContextMenu3;
 
 // Wraps a real shell context menu (IContextMenu::QueryContextMenu /
-// TrackPopupMenu / InvokeCommand) for a right-clicked selection, plus the
-// WM_INITMENUPOPUP/WM_DRAWITEM/WM_MEASUREITEM/WM_MENUCHAR forwarding a
-// tracked menu needs for submenus (e.g. "Send to") and icons to render -
-// same PIDL-binding pattern as outbound drag-and-drop (ShellSelection).
+// TrackPopupMenu / InvokeCommand), plus the WM_INITMENUPOPUP/WM_DRAWITEM/
+// WM_MEASUREITEM/WM_MENUCHAR forwarding a tracked menu needs for submenus
+// (e.g. "Send to") and icons to render.
 class ShellContextMenu {
 public:
-    // Builds and tracks the menu for `paths` (all in the same parent
-    // folder, as with a single pane's selection) at `screenPt`. Returns
-    // true if a command was actually invoked (caller should refresh the
-    // pane), false if nothing matched the selection or the menu was
-    // dismissed without a choice.
-    bool showAndInvoke(HWND owner, const std::vector<std::wstring>& paths, POINT screenPt);
+    // The shell menu for a selection (all in the same parent folder, as
+    // with a single pane's selection - same PIDL binding as outbound
+    // drag-and-drop, see ShellSelection).
+    static ComPtr<IContextMenu> menuForPaths(HWND owner, const std::vector<std::wstring>& paths);
+    // For one item given by any parsing name, including drive roots and
+    // "::{CLSID}" locations (tree nodes).
+    static ComPtr<IContextMenu> menuForItem(const std::wstring& path);
+    // A folder's own background menu (New, Properties, "Open in Terminal",
+    // ...), i.e. IShellFolder::CreateViewObject.
+    static ComPtr<IContextMenu> menuForBackground(const std::wstring& folderPath);
 
-    // Same as above, but for a caller that already has an IContextMenu -
-    // e.g. RecycleBinOps::get<IContextMenu>, whose items aren't real paths
-    // ShellSelection could bind on its own.
-    bool showAndInvoke(HWND owner, ComPtr<IContextMenu> menu, POINT screenPt);
-
-    // One of our own commands shown above the shell's items in a
-    // background menu; `id` is what Result::ownCommand reports back.
+    // One of our own commands shown alongside the shell's items; `id` is
+    // what Result::ownCommand reports back.
     struct OwnItem {
         UINT id;
         std::wstring label;
@@ -39,21 +37,24 @@ public:
         UINT ownCommand = 0;        // an OwnItem::id was picked instead
     };
 
-    // Empty-area right-click: the real shell background menu of
-    // `folderPath` (New, Paste, Properties, ...) with `ownItems` on top.
-    // Falls back to just `ownItems` if the folder has no such menu.
-    Result showBackground(HWND owner, const std::wstring& folderPath, POINT screenPt,
-                          const std::vector<OwnItem>& ownItems);
+    // Tracks `menu` at `screenPt` with `top` items above the shell's and
+    // `beforeProperties` just above its プロパティ group (where Explorer
+    // has 名前の変更). Shift held adds the extended verbs. Returns an empty
+    // Result if nothing was chosen or there is no menu and no own items.
+    Result show(HWND owner, const ComPtr<IContextMenu>& menu, POINT screenPt, const std::vector<OwnItem>& top = {},
+                const std::vector<OwnItem>& beforeProperties = {});
 
-    // Forward from the owner's wndProc while showAndInvoke's TrackPopupMenu
+    // Shell commands only - e.g. RecycleBinOps::get<IContextMenu>, whose
+    // items aren't real paths. Returns true if a command ran.
+    bool showAndInvoke(HWND owner, ComPtr<IContextMenu> menu, POINT screenPt);
+
+    // Forward from the owner's wndProc while show()'s TrackPopupMenu
     // nested loop is running (only WM_INITMENUPOPUP/WM_DRAWITEM/
     // WM_MEASUREITEM/WM_MENUCHAR are relevant). Sets `result` and returns
     // true if the message was handled by the tracked menu.
     bool forwardMenuMessage(UINT msg, WPARAM wParam, LPARAM lParam, LRESULT& result);
 
 private:
-    Result track(HWND owner, const ComPtr<IContextMenu>& menu, POINT screenPt, const std::vector<OwnItem>& ownItems);
-
     // Non-owning; set only while TrackPopupMenu is running.
     IContextMenu3* activeMenu_ = nullptr;
 };

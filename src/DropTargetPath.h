@@ -24,4 +24,8 @@ std::vector<std::wstring> candidates(const std::wstring& currentDir, const std::
 // makes a "- コピー" duplicate). Comparison is case-insensitive.
 bool isOntoSource(const std::vector<std::wstring>& sources, const std::wstring& target, bool explicitCopy);
 
+// True if a tree node for `path` can start a drag: a real folder, not a
+// drive root or a virtual location (This PC, Recycle Bin).
+bool isDraggableFolder(const std::wstring& path);
+
 }  // namespace DropTargetPath

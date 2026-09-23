@@ -58,3 +58,11 @@ TEST_CASE("drive-root sources compare correctly against their parent") {
     const Paths sources{L"C:\\a.txt"};
     CHECK(DropTargetPath::isOntoSource(sources, L"C:\\", false));
 }
+
+TEST_CASE("tree nodes are draggable only when they are ordinary folders") {
+    CHECK(DropTargetPath::isDraggableFolder(L"C:\\Users\\me"));
+    CHECK_FALSE(DropTargetPath::isDraggableFolder(L""));
+    CHECK_FALSE(DropTargetPath::isDraggableFolder(L"C:\\"));  // a drive root
+    CHECK_FALSE(DropTargetPath::isDraggableFolder(kThisPcPath));
+    CHECK_FALSE(DropTargetPath::isDraggableFolder(kRecycleBinPath));
+}

@@ -48,6 +48,13 @@ public:
     std::function<void(const std::wstring& path)> onOpenInNewTab;
     void openItemInNewTab(POINT clientPt);  // called from the tree's middle-button subclass
 
+    // Context-menu support: the node under a screen point (on its label or
+    // icon, else null), a node's path (empty for none/placeholders), and
+    // dropping a node whose folder no longer exists after a shell command.
+    HTREEITEM itemAtScreenPoint(POINT screenPt) const;
+    std::wstring pathOf(HTREEITEM item) const;
+    void removeIfGone(HTREEITEM item);
+
 private:
     struct NodeData {
         std::wstring path;

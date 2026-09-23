@@ -1,5 +1,7 @@
 #include "TreePane.h"
+#include "DropTargetPath.h"
 #include "FileDropTarget.h"
+#include "FileOperations.h"
 #include "IconCache.h"
 #include "Messages.h"
 #include "Types.h"
@@ -38,7 +40,7 @@ bool TreePane::create(HWND parent, HINSTANCE hInstance, int controlId) {
     hwnd_ = CreateWindowExW(
         WS_EX_CLIENTEDGE, WC_TREEVIEWW, L"",
         WS_CHILD | WS_CLIPSIBLINGS | WS_VISIBLE | TVS_HASLINES | TVS_HASBUTTONS | TVS_LINESATROOT |
-            TVS_SHOWSELALWAYS | TVS_DISABLEDRAGDROP,
+            TVS_SHOWSELALWAYS,
         0, 0, 0, 0, parent, reinterpret_cast<HMENU>(static_cast<INT_PTR>(controlId)), hInstance, nullptr);
     if (!hwnd_) return false;
 
@@ -59,6 +61,25 @@ bool TreePane::create(HWND parent, HINSTANCE hInstance, int controlId) {
         [this](intptr_t key) { TreeView_SelectDropTarget(hwnd_, reinterpret_cast<HTREEITEM>(key)); },
     });
     return true;
+}
+
+HTREEITEM TreePane::itemAtScreenPoint(POINT screenPt) const {
+    TVHITTESTINFO hit{};
+    hit.pt = screenPt;
+    ScreenToClient(hwnd_, &hit.pt);
+    const HTREEITEM item = TreeView_HitTest(hwnd_, &hit);
+    return (item && (hit.flags & (TVHT_ONITEMLABEL | TVHT_ONITEMICON))) ? item : nullptr;
+}
+
+std::wstring TreePane::pathOf(HTREEITEM item) const {
+    const NodeData* data = dataOf(item);
+    return data ? data->path : std::wstring{};
+}
+
+void TreePane::removeIfGone(HTREEITEM item) {
+    const std::wstring path = pathOf(item);
+    if (path.empty() || path.starts_with(L"::")) return;
+    if (GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES) TreeView_DeleteItem(hwnd_, item);
 }
 
 void TreePane::openItemInNewTab(POINT clientPt) {
@@ -263,6 +284,19 @@ LRESULT TreePane::handleNotify(NMHDR* nmhdr) {
             auto* nmtv = reinterpret_cast<NMTREEVIEWW*>(nmhdr);
             if (nmtv->action == TVE_EXPAND) {
                 populateChildren(nmtv->itemNew.hItem);
+            }
+            return 0;
+        }
+        case TVN_BEGINDRAGW:
+        case TVN_BEGINRDRAGW: {
+            // A folder node can be dragged like a list row (onto the other
+            // pane, another node, or out to Explorer).
+            auto* nmtv = reinterpret_cast<NMTREEVIEWW*>(nmhdr);
+            const auto* data = reinterpret_cast<NodeData*>(nmtv->itemNew.lParam);
+            if (data && DropTargetPath::isDraggableFolder(data->path)) {
+                FileDropTarget::InternalDragScope internal({data->path});
+                FileOperations::startDrag(hwnd_, {data->path});
+                removeIfGone(nmtv->itemNew.hItem);  // moved away
             }
             return 0;
         }

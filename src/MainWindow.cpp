@@ -839,11 +839,45 @@ void MainWindow::onXButton(WORD xButton) {
     else if (xButton == XBUTTON2) activePane().goForward();
 }
 
+void MainWindow::onTreeContextMenu(int screenX, int screenY) {
+    POINT screenPt{screenX, screenY};
+    HTREEITEM item = nullptr;
+    if (screenX == -1 && screenY == -1) {
+        // Keyboard-invoked: the selected node, menu anchored near the tree.
+        item = TreeView_GetSelection(tree_.hwnd());
+        RECT r;
+        GetWindowRect(tree_.hwnd(), &r);
+        screenPt = {r.left + 20, r.top + 20};
+    } else {
+        item = tree_.itemAtScreenPoint(screenPt);
+    }
+    const std::wstring path = tree_.pathOf(item);
+    if (path.empty()) return;
+
+    // Outline the node while its menu is up, as Explorer does, without
+    // moving the selection.
+    TreeView_SelectDropTarget(tree_.hwnd(), item);
+    const auto result = shellMenu_.show(hwnd_, ShellContextMenu::menuForItem(path), screenPt,
+                                        {{IDM_TAB_OPEN_NEW, L"新しいタブで開く(&T)"}});
+    TreeView_SelectDropTarget(tree_.hwnd(), nullptr);
+
+    if (result.ownCommand == IDM_TAB_OPEN_NEW) {
+        activePane().openInBackgroundTab(path);
+    } else if (result.shellInvoked) {
+        tree_.removeIfGone(item);  // e.g. the folder was just deleted
+        activePane().refresh();
+    }
+}
+
 void MainWindow::onContextMenu(HWND target, int screenX, int screenY) {
+    if (target == tree_.hwnd()) {
+        onTreeContextMenu(screenX, screenY);
+        return;
+    }
     FilePane* pane = nullptr;
     if (target == left_.hwnd()) pane = &left_;
     else if (target == right_.hwnd()) pane = &right_;
-    if (!pane) return;  // not one of the file panes (tree, toolbar, ...) - nothing to show
+    if (!pane) return;  // not one of the file panes (toolbar, ...) - nothing to show
 
     POINT screenPt{screenX, screenY};
     if (screenX == -1 && screenY == -1) {
@@ -871,7 +905,18 @@ void MainWindow::onContextMenu(HWND target, int screenX, int screenY) {
 
     auto paths = pane->selectedPaths();
     if (!paths.empty()) {
-        if (shellMenu_.showAndInvoke(hwnd_, paths, screenPt)) pane->refresh();
+        // The shell leaves 名前の変更 out of a menu that has no Explorer view
+        // behind it, so ours goes where Explorer puts it.
+        std::vector<ShellContextMenu::OwnItem> top;
+        const DWORD attrs = paths.size() == 1 ? GetFileAttributesW(paths.front().c_str()) : INVALID_FILE_ATTRIBUTES;
+        if (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY)) {
+            top.push_back({IDM_TAB_OPEN_NEW, L"新しいタブで開く(&T)"});
+        }
+        const auto result = shellMenu_.show(hwnd_, ShellContextMenu::menuForPaths(hwnd_, paths), screenPt, top,
+                                            {{IDM_FILE_RENAME, L"名前の変更(&M)\tF2"}});
+        if (result.ownCommand == IDM_TAB_OPEN_NEW) pane->openInBackgroundTab(paths.front());
+        else if (result.ownCommand == IDM_FILE_RENAME) pane->doRename();
+        else if (result.shellInvoked) pane->refresh();
         return;
     }
 
@@ -879,7 +924,7 @@ void MainWindow::onContextMenu(HWND target, int screenX, int screenY) {
     // (新規作成, プロパティ, ...). Explorer's own view adds 最新の情報に更新
     // etc. on top of it; those come from its view, not the folder, so ours
     // are prepended here instead.
-    const auto result = shellMenu_.showBackground(hwnd_, pane->currentPath(), screenPt, {
+    const auto result = shellMenu_.show(hwnd_, ShellContextMenu::menuForBackground(pane->currentPath()), screenPt, {
         {IDM_VIEW_REFRESH, L"最新の情報に更新(&E)"},
         {IDM_FILE_MKDIR, L"新しいフォルダー(&N)\tF7"},
         {IDM_EDIT_PASTE, L"貼り付け(&P)\tCtrl+V"},

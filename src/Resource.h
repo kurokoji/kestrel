@@ -32,6 +32,7 @@
 #define IDM_TAB_CLOSE              1306
 #define IDM_TAB_NEXT               1307
 #define IDM_TAB_PREV               1308
+#define IDM_TAB_OPEN_NEW           1309  // context menus only: open a folder in a background tab
 
 #define IDM_TOOLS_FONT             1401
 #define IDM_SORT_NAME              1402

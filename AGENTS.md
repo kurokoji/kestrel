@@ -463,6 +463,18 @@ commit - don't let it drift out of sync with what the app actually does.
   (the shell tidies separators around its own items). Some handlers
   (ATOK) still insert at position 0 regardless; not ours to fix. Shift
   held adds `CMF_EXTENDEDVERBS`/`CMIC_MASK_SHIFT_DOWN`, for item menus too.
+- The shell leaves 名前の変更 out of an item context menu that has no
+  Explorer view (`IShellView`) behind it - it isn't just hidden, invoking
+  a "rename" verb would do nothing either. `ShellContextMenu::show` takes
+  own items for the top and for just above the プロパティ group (found by
+  its `"properties"` verb); the file list adds 名前の変更 there (starting
+  our own label edit) and 新しいタブで開く on top for a single folder.
+  Tree nodes bind by parsing name (`menuForItem`, `BHID_SFUIObject`) so
+  drive roots and `::{CLSID}` nodes get menus too; a node whose folder is
+  gone after a command is removed (`TreePane::removeIfGone`), since the
+  tree has no watcher. Tree nodes are also drag sources now (not drive
+  roots/virtual nodes, `DropTargetPath::isDraggableFolder`) - not
+  verified live, since every reachable node is a real user folder.
 - **A ListView keeps selected/focused row *indices* across
   `ListView_SetItemCountEx`**, even in `LVS_OWNERDATA`. Navigating to a
   different folder therefore opened with the old folder's row numbers

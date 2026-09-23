@@ -50,6 +50,7 @@ private:
     LRESULT onNotify(LPARAM lParam);
     void onPaint();
     void onContextMenu(HWND target, int screenX, int screenY);
+    void onTreeContextMenu(int screenX, int screenY);
 
     void refreshUiForActivePane();
     void updateStatusBar();
