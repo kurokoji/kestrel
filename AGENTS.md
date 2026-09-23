@@ -751,12 +751,10 @@ commit - don't let it drift out of sync with what the app actually does.
     invokes whatever command id the user actually clicked in the real,
     shown menu). There's no verb-name lookup on this path at all - confirmed
     live that the recycle bin's real IContextMenu correctly shows "元に戻す"
-    as its first item for a selected item. Deliberately *not* also wired to
-    a button/key: the recycle bin's restore command is exposed under the
-    shell-extension-specific verb `"undelete"` (or possibly `"restore"` on
-    some Windows versions) rather than a universal verb like `"delete"` -
-    unlike delete below, this isn't a case where you can just trust the
-    verb name without live-testing it, and doing so risked a silent no-op.
+    as its first item for a selected item. Not wired to a key in the
+    Recycle Bin view; the verb itself (`"undelete"`) has since been
+    confirmed live on this machine and is what Ctrl+Z's restore uses
+    (`RecycleBinOps::restoreItems`).
   - **Permanent delete and empty-the-bin *are* invoked directly**
     (`FilePane::doDelete()`'s `kRecycleBinPath` branch, and the
     `emptyRecycleBinButton_`/`FilePane::emptyRecycleBin()` button below
