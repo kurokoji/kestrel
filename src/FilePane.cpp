@@ -1,6 +1,8 @@
 #include "FilePane.h"
 #include "WindowPlacement.h"
 #include "Dialogs.h"
+#include "DropTargetPath.h"
+#include "FileDropTarget.h"
 #include "FileEntrySort.h"
 #include "FileOperations.h"
 #include "IconCache.h"
@@ -15,17 +17,7 @@
 
 namespace {
 
-std::wstring joinPath(const std::wstring& dir, const std::wstring& name) {
-    // The This-PC view's entries are already full drive roots ("C:\"),
-    // not names relative to a real containing folder - kThisPcPath itself
-    // isn't a real path to prepend.
-    if (dir == kThisPcPath) return name;
-
-    std::wstring full = dir;
-    if (!full.empty() && full.back() != L'\\') full += L'\\';
-    full += name;
-    return full;
-}
+using DropTargetPath::joinPath;
 
 std::wstring lowercaseCopy(std::wstring s) {
     std::ranges::transform(s, s.begin(), ::towlower);
@@ -148,6 +140,11 @@ bool FilePane::create(HWND parent, HINSTANCE hInstance, int controlId, int paneI
     SetWindowSubclass(tabHwnd_, TabStripSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
     SendMessageW(tabHwnd_, WM_SETFONT, reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)), TRUE);
     relayoutTabs();
+
+    FileDropTarget::registerOn(hwnd_, {
+        [this](POINT pt) { return dropHitTest(pt); },
+        [this](intptr_t key) { setDropHighlight(static_cast<int>(key) - 1); },
+    });
 
     return true;
 }
@@ -481,6 +478,28 @@ void FilePane::jumpToNextMatch() {
     }
 }
 
+FileDropTarget::Hit FilePane::dropHitTest(POINT pt) const {
+    LVHITTESTINFO hit{};
+    hit.pt = pt;
+    const int idx = ListView_HitTest(hwnd_, &hit);
+    // Only a row's icon/label counts as "on" it, as in Explorer's details
+    // view; the empty width to the right of the name is the folder itself.
+    if (idx < 0 || !(hit.flags & (LVHT_ONITEMICON | LVHT_ONITEMLABEL)) ||
+        static_cast<size_t>(idx) >= live_.entries.size()) {
+        return {DropTargetPath::candidates(live_.path, L"", false), 0};
+    }
+    const FileEntry& e = live_.entries[idx];
+    return {DropTargetPath::candidates(live_.path, e.name, e.isDirectory()), idx + 1};
+}
+
+void FilePane::setDropHighlight(int index) {
+    if (index == dropHighlightIndex_) return;
+    if (dropHighlightIndex_ >= 0) ListView_RedrawItems(hwnd_, dropHighlightIndex_, dropHighlightIndex_);
+    dropHighlightIndex_ = index;
+    if (index >= 0) ListView_RedrawItems(hwnd_, index, index);
+    UpdateWindow(hwnd_);
+}
+
 void FilePane::selectSingleItemAtClientPoint(POINT pt) {
     LVHITTESTINFO hit{};
     hit.pt = pt;
@@ -562,9 +581,13 @@ LRESULT FilePane::handleNotify(NMHDR* nmhdr) {
             }
             return 0;
         }
-        case LVN_BEGINDRAG: {
+        case LVN_BEGINDRAG:
+        case LVN_BEGINRDRAG: {
             auto paths = selectedPaths();
-            if (!paths.empty()) FileOperations::startDrag(parentWnd_, paths);
+            if (!paths.empty()) {
+                FileDropTarget::InternalDragScope internal(paths);
+                FileOperations::startDrag(hwnd_, paths);
+            }
             return 0;
         }
         case NM_DBLCLK: {
@@ -605,12 +628,12 @@ LRESULT FilePane::handleNotify(NMHDR* nmhdr) {
             auto* cd = reinterpret_cast<NMLVCUSTOMDRAW*>(nmhdr);
             switch (cd->nmcd.dwDrawStage) {
                 case CDDS_PREPAINT:
-                    return (searchQuery_.empty() && currentMatchIndex_ < 0 && cutPaths_.empty())
+                    return (searchQuery_.empty() && currentMatchIndex_ < 0 && cutPaths_.empty() && dropHighlightIndex_ < 0)
                                ? CDRF_DODEFAULT
                                : CDRF_NOTIFYITEMDRAW;
                 case CDDS_ITEMPREPAINT: {
                     const int idx = static_cast<int>(cd->nmcd.dwItemSpec);
-                    if (idx == currentMatchIndex_) {
+                    if (idx == currentMatchIndex_ || idx == dropHighlightIndex_) {
                         // The item just jumped to via Enter - paint it in
                         // the real selection colors so it reads as
                         // "selected" even though focus is still in the
@@ -645,7 +668,8 @@ LRESULT FilePane::handleNotify(NMHDR* nmhdr) {
                         HIMAGELIST himl = ListView_GetImageList(hwnd_, LVSIL_SMALL);
                         const bool selected = (ListView_GetItemState(hwnd_, idx, LVIS_SELECTED) & LVIS_SELECTED) != 0;
                         const bool isMatch = matchesSearch(e);
-                        const COLORREF bg = (idx == currentMatchIndex_ || selected) ? GetSysColor(COLOR_HIGHLIGHT)
+                        const COLORREF bg = (idx == currentMatchIndex_ || idx == dropHighlightIndex_ || selected)
+                                                 ? GetSysColor(COLOR_HIGHLIGHT)
                                              : isMatch                              ? RGB(255, 244, 160)
                                                                                     : GetSysColor(COLOR_WINDOW);
                         HBRUSH bgBrush = CreateSolidBrush(bg);

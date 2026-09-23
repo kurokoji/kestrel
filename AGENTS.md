@@ -408,6 +408,25 @@ commit - don't let it drift out of sync with what the app actually does.
   (not just `CoInitializeEx`) on the calling thread** - App.cpp's message
   loop thread was switched from one to the other for this; don't revert
   it back to plain `CoInitializeEx` or dragging silently stops working.
+- Inbound drag-and-drop (`FileDropTarget`, registered on both file lists
+  and the tree) never performs file operations itself: each hover is
+  resolved (`DropTargetPath::candidates` - folder row, else file row for
+  exe/zip handlers, else the pane's folder) to a shell item whose own
+  `IDropTarget` (`BHID_SFUIObject`) gets DragEnter/Over/Drop forwarded.
+  That's what gives Explorer's move-vs-copy-by-drive, modifier keys,
+  right-drag menu, zip/exe/Recycle Bin handling for free - don't replace
+  it with a CF_HDROP parse + `FileOperations::moveItems`. `Drop` must not
+  forward another `DragOver` first: by then the buttons are up and the
+  shell forgets it was a right-drag (no drop menu). Our own drags set
+  `FileDropTarget::InternalDragScope` so dropping onto a dragged item or
+  back into its own folder is refused (`DropTargetPath::isOntoSource`;
+  Ctrl allows the same-folder copy). Outbound drags use `SHDoDragDrop`
+  from the ListView HWND (not `DoDragDrop` with a hand-rolled
+  `IDropSource`) for the shell drag image and right-drag support. Drop
+  targets are revoked in `MainWindow`'s `WM_DESTROY` since children are
+  destroyed after it. Verified live with a real `mouse_event` drag in a
+  temp folder: pane-to-pane onto a folder row, onto empty list space,
+  same-pane onto a folder row, and drop-back-onto-self (refused).
 - The custom UI font (Tools > Options, `MainWindow::chooseFont`/
   `applyFont`) is deliberately scoped to the tree/lists/tabs/address
   bar/status bar only - not the toolbar (icon-only, no visible text worth

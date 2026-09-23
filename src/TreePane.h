@@ -1,5 +1,7 @@
 #pragma once
 
+#include "FileDropTarget.h"
+
 #include <windows.h>
 #include <commctrl.h>
 #include <functional>
@@ -54,6 +56,13 @@ private:
     void populateChildren(HTREEITEM item);
     NodeData* dataOf(HTREEITEM item) const;
     void navigateFromItem(HTREEITEM item);
+
+    // OLE drop target hit-test (see FileDropTarget); also auto-expands a
+    // node the drag has hovered over for kDropExpandDelayMs.
+    FileDropTarget::Hit dropHitTest(POINT pt);
+    static constexpr ULONGLONG kDropExpandDelayMs = 800;
+    HTREEITEM dropHoverItem_ = nullptr;
+    ULONGLONG dropHoverSince_ = 0;
 
     static void enumerateChildrenWorker(std::wstring path, HTREEITEM item, HWND notifyWnd);
 

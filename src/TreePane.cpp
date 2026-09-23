@@ -1,4 +1,5 @@
 #include "TreePane.h"
+#include "FileDropTarget.h"
 #include "IconCache.h"
 #include "Messages.h"
 #include "Types.h"
@@ -38,7 +39,38 @@ bool TreePane::create(HWND parent, HINSTANCE hInstance, int controlId) {
     }
 
     addRootItems();
+
+    FileDropTarget::registerOn(hwnd_, {
+        [this](POINT pt) { return dropHitTest(pt); },
+        [this](intptr_t key) { TreeView_SelectDropTarget(hwnd_, reinterpret_cast<HTREEITEM>(key)); },
+    });
     return true;
+}
+
+FileDropTarget::Hit TreePane::dropHitTest(POINT pt) {
+    TVHITTESTINFO hit{};
+    hit.pt = pt;
+    const HTREEITEM item = TreeView_HitTest(hwnd_, &hit);
+    if (!item || !(hit.flags & (TVHT_ONITEMLABEL | TVHT_ONITEMICON))) {
+        dropHoverItem_ = nullptr;
+        return {};
+    }
+
+    // Hovering a collapsed node for a moment expands it, as in Explorer, so
+    // a drag can reach folders that aren't visible yet.
+    const ULONGLONG now = GetTickCount64();
+    if (item != dropHoverItem_) {
+        dropHoverItem_ = item;
+        dropHoverSince_ = now;
+    } else if (now - dropHoverSince_ >= kDropExpandDelayMs &&
+               !(TreeView_GetItemState(hwnd_, item, TVIS_EXPANDED) & TVIS_EXPANDED)) {
+        TreeView_Expand(hwnd_, item, TVE_EXPAND);
+    }
+
+    const NodeData* data = dataOf(item);
+    // "PC" itself isn't a folder you can drop into; its drives are.
+    if (!data || data->path.empty() || data->path == kThisPcPath) return {};
+    return {{data->path}, reinterpret_cast<intptr_t>(item)};
 }
 
 HTREEITEM TreePane::addNode(HTREEITEM parent, const std::wstring& text, const std::wstring& path,

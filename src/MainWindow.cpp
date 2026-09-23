@@ -227,6 +227,11 @@ LRESULT MainWindow::wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             onXButton(GET_XBUTTON_WPARAM(wParam));
             return TRUE;
         case WM_DESTROY:
+            // Children are destroyed after this; drop targets must be
+            // revoked while their windows still exist.
+            RevokeDragDrop(tree_.hwnd());
+            RevokeDragDrop(left_.hwnd());
+            RevokeDragDrop(right_.hwnd());
             saveSession();
             if (customFont_) DeleteObject(customFont_);
             PostQuitMessage(0);

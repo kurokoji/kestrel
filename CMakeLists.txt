@@ -34,6 +34,8 @@ add_executable(kestrel WIN32
     src/SessionFormat.cpp
     src/TabCycle.cpp
     src/DriveBadge.cpp
+    src/DropTargetPath.cpp
+    src/FileDropTarget.cpp
     src/kestrel.rc
 )
 
@@ -89,6 +91,8 @@ if(KESTREL_BUILD_TESTS)
         tests/EditKeysTests.cpp
         tests/DriveBadgeTests.cpp
         src/DriveBadge.cpp
+        tests/DropTargetPathTests.cpp
+        src/DropTargetPath.cpp
     )
 
     target_include_directories(kestrel_tests PRIVATE

@@ -2,6 +2,7 @@
 
 #include "DirectoryModel.h"
 #include "DirectoryWatcher.h"
+#include "FileDropTarget.h"
 #include "Types.h"
 
 #include <windows.h>
@@ -220,6 +221,11 @@ private:
     std::wstring pathForIndex(int index) const;
     bool matchesSearch(const FileEntry& e) const;
 
+    // OLE drop target callbacks (see FileDropTarget): what's under a client
+    // point, and which row to paint as the drop destination (-1 = none).
+    FileDropTarget::Hit dropHitTest(POINT pt) const;
+    void setDropHighlight(int index);
+
     // Tab state, layout, drawing and mouse handling are implemented in
     // FilePaneTabs.cpp.
     static LRESULT CALLBACK TabStripSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam,
@@ -277,6 +283,7 @@ private:
     bool searchVisible_ = false;
     std::wstring searchQuery_;  // lowercased; empty = no active search
     int currentMatchIndex_ = -1;  // custom-drawn blue (not just the yellow match color) regardless of list focus
+    int dropHighlightIndex_ = -1;  // folder row under an incoming drag; custom-drawn like currentMatchIndex_
     HWND parentWnd_ = nullptr;
     int paneId_ = 0;
 

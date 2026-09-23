@@ -14,30 +14,6 @@ ComPtr<IShellItem> itemFromPath(const std::wstring& path) {
     return ComPtr<IShellItem>(raw);
 }
 
-// Minimal IDropSource for DoDragDrop: not refcounted (lives on the stack
-// for the duration of a single blocking DoDragDrop call), just answers
-// "keep dragging / drop now / cancel" from live mouse/keyboard state.
-class DragDropSource : public IDropSource {
-public:
-    STDMETHODIMP QueryInterface(REFIID riid, void** ppv) override {
-        if (riid == IID_IUnknown || riid == IID_IDropSource) {
-            *ppv = this;
-            return S_OK;
-        }
-        *ppv = nullptr;
-        return E_NOINTERFACE;
-    }
-    STDMETHODIMP_(ULONG) AddRef() override { return 1; }
-    STDMETHODIMP_(ULONG) Release() override { return 1; }
-
-    STDMETHODIMP QueryContinueDrag(BOOL fEscapePressed, DWORD grfKeyState) override {
-        if (fEscapePressed) return DRAGDROP_S_CANCEL;
-        if (!(grfKeyState & (MK_LBUTTON | MK_RBUTTON))) return DRAGDROP_S_DROP;
-        return S_OK;
-    }
-    STDMETHODIMP GiveFeedback(DWORD) override { return DRAGDROP_S_USEDEFAULTCURSORS; }
-};
-
 // Runs `build` (which queues operations on the IFileOperation) then
 // performs them, letting the shell own all progress/confirmation UI.
 template <typename Build>
@@ -163,10 +139,12 @@ bool startDrag(HWND owner, const std::vector<std::wstring>& sources) {
     auto dataObj = ShellSelection::get<IDataObject>(owner, sources);
     if (!dataObj) return false;
 
-    DragDropSource dropSource;
+    // SHDoDragDrop (rather than a bare DoDragDrop) supplies the shell's own
+    // drop source, which handles right-button drags and asks `owner` (the
+    // ListView, via DI_GETDRAGIMAGE) for the translucent drag image.
     DWORD effect = DROPEFFECT_NONE;
     const HRESULT dragHr =
-        DoDragDrop(dataObj.get(), &dropSource, DROPEFFECT_COPY | DROPEFFECT_MOVE | DROPEFFECT_LINK, &effect);
+        SHDoDragDrop(owner, dataObj.get(), nullptr, DROPEFFECT_COPY | DROPEFFECT_MOVE | DROPEFFECT_LINK, &effect);
     return dragHr == DRAGDROP_S_DROP;
 }
 
