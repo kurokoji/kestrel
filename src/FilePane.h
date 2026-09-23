@@ -97,6 +97,11 @@ public:
     // 1=Type, 2=Size, 3=Modified.
     static void setDefaultSort(int column, bool ascending);
 
+    // View > 隠しファイル, shared by both panes. Call reloadAllTabs() on
+    // each pane after changing it so cached tabs don't keep the old view.
+    static void setShowHidden(bool show) { showHidden_ = show; }
+    void reloadAllTabs();
+
     // Called by MainWindow once it receives WM_APP_DIR_RESULT addressed to
     // this pane (the pane pointer travels as the message's wParam).
     void handleDirResult(std::unique_ptr<EnumerationResult> result);
@@ -311,4 +316,5 @@ private:
 
     static inline int defaultSortColumn_ = 0;
     static inline bool defaultSortAscending_ = true;
+    static inline bool showHidden_ = true;
 };

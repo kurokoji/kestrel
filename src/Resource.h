@@ -21,6 +21,7 @@
 #define IDM_VIEW_REFRESH           1201
 #define IDM_VIEW_TREE              1202
 #define IDM_VIEW_SINGLEPANE        1203
+#define IDM_VIEW_HIDDEN            1204
 
 #define IDM_GO_BACK                1301
 #define IDM_GO_FORWARD             1302

@@ -46,6 +46,10 @@ struct SessionData {
     // 1=Type, 2=Size, 3=Modified. Does not affect already-open tabs.
     int defaultSortColumn = 0;
     bool defaultSortAscending = true;
+
+    // View > 隠しファイル. On by default: hidden files were always listed
+    // before this setting existed.
+    bool showHidden = true;
 };
 
 namespace Session {

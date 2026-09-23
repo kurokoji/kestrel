@@ -69,6 +69,8 @@ SessionData parseContent(const std::wstring& content) {
                 } else if (f[0] == L"O" && f.size() >= 3) {
                     data.defaultSortColumn = std::stoi(f[1]);
                     data.defaultSortAscending = (f[2] == L"1");
+                } else if (f[0] == L"H" && f.size() >= 2) {
+                    data.showHidden = (f[1] == L"1");
                 }
             } catch (...) {
                 // Malformed line (hand-edited file, corruption, a future
@@ -105,6 +107,7 @@ std::wstring serialize(const SessionData& data) {
     }
 
     out += std::format(L"O\t{}\t{}\n", data.defaultSortColumn, data.defaultSortAscending ? 1 : 0);
+    out += std::format(L"H\t{}\n", data.showHidden ? 1 : 0);
 
     return out;
 }

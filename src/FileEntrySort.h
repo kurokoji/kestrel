@@ -20,4 +20,7 @@ bool matchesSearch(const FileEntry& entry, const std::wstring& lowercaseQuery);
 // after the last entry. Backs the list's type-to-select (LVN_ODFINDITEM).
 int findByPrefix(const std::vector<FileEntry>& entries, const std::wstring& prefix, int start, bool wrap);
 
+// Removes FILE_ATTRIBUTE_HIDDEN entries (View > 隠しファイル off).
+void removeHidden(std::vector<FileEntry>& entries);
+
 }  // namespace FileEntrySort

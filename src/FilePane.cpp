@@ -258,6 +258,7 @@ void FilePane::handleDirResult(std::unique_ptr<EnumerationResult> result) {
 
 void FilePane::applyEntries(std::vector<FileEntry> entries) {
     live_.entries = std::move(entries);
+    if (!showHidden_) FileEntrySort::removeHidden(live_.entries);
     sortEntries();
 
     live_.stats.fileCount = 0;

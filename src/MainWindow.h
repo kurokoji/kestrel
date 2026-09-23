@@ -46,6 +46,7 @@ private:
     void chooseFont();
     void applyFont(const LOGFONTW& lf);
     void applyDefaultSort(int column, bool ascending);
+    void applyShowHidden(bool show);
     LRESULT onNotify(LPARAM lParam);
     void onPaint();
     void onContextMenu(HWND target, int screenX, int screenY);
@@ -95,6 +96,9 @@ private:
     HMENU sortMenu_ = nullptr;
     int sortColumn_ = 0;
     bool sortAscending_ = true;
+
+    HMENU viewMenu_ = nullptr;
+    bool showHidden_ = true;  // mirrors FilePane::setShowHidden for the menu check and the session
 
     TreePane tree_;
     PreviewPane preview_;

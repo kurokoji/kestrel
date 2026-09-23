@@ -274,6 +274,7 @@ void MainWindow::saveSession() {
 
     data.defaultSortColumn = sortColumn_;
     data.defaultSortAscending = sortAscending_;
+    data.showHidden = showHidden_;
 
     Session::save(data);
 }
@@ -286,6 +287,12 @@ void MainWindow::applyDefaultSort(int column, bool ascending) {
     static constexpr UINT kColumnIds[] = {IDM_SORT_NAME, IDM_SORT_TYPE, IDM_SORT_SIZE, IDM_SORT_MODIFIED};
     CheckMenuRadioItem(sortMenu_, IDM_SORT_NAME, IDM_SORT_MODIFIED, kColumnIds[sortColumn_], MF_BYCOMMAND);
     CheckMenuItem(sortMenu_, IDM_SORT_DESCENDING, MF_BYCOMMAND | (sortAscending_ ? MF_UNCHECKED : MF_CHECKED));
+}
+
+void MainWindow::applyShowHidden(bool show) {
+    showHidden_ = show;
+    FilePane::setShowHidden(show);
+    CheckMenuItem(viewMenu_, IDM_VIEW_HIDDEN, MF_BYCOMMAND | (show ? MF_CHECKED : MF_UNCHECKED));
 }
 
 void MainWindow::chooseFont() {
@@ -355,6 +362,7 @@ void MainWindow::onCreate() {
     // with).
     applyDefaultSort(pendingSession_ ? pendingSession_->defaultSortColumn : 0,
                       pendingSession_ ? pendingSession_->defaultSortAscending : true);
+    applyShowHidden(pendingSession_ ? pendingSession_->showHidden : true);
 
     tree_.create(hwnd_, hInstance_, IDC_TREE);
     preview_.create(hwnd_, hInstance_, IDC_PREVIEW);
@@ -476,9 +484,11 @@ void MainWindow::createMenuBar() {
     AppendMenuW(editMenu, MF_STRING, IDM_EDIT_FIND, L"検索(&F)\tCtrl+F");
 
     HMENU viewMenu = CreatePopupMenu();
+    viewMenu_ = viewMenu;
     AppendMenuW(viewMenu, MF_STRING, IDM_VIEW_REFRESH, L"更新(&R)");
     AppendMenuW(viewMenu, MF_STRING, IDM_VIEW_TREE, L"ツリー(&T)\tCtrl+Shift+T");
     AppendMenuW(viewMenu, MF_STRING, IDM_VIEW_SINGLEPANE, L"シングルペイン表示(&S)\tCtrl+U");
+    AppendMenuW(viewMenu, MF_STRING, IDM_VIEW_HIDDEN, L"隠しファイル(&H)\tCtrl+H");
 
     HMENU goMenu = CreatePopupMenu();
     AppendMenuW(goMenu, MF_STRING, IDM_GO_BACK, L"戻る(&B)\tAlt+Left");
@@ -927,6 +937,12 @@ void MainWindow::onCommand(int id, HWND ctrl) {
             SendMessageW(toolbar_, TB_CHECKBUTTON, IDM_VIEW_SINGLEPANE, MAKELONG(singlePaneMode_ ? TRUE : FALSE, 0));
             layoutChildren();
             updateActivePaneFrame();
+            break;
+
+        case IDM_VIEW_HIDDEN:
+            applyShowHidden(!showHidden_);
+            left_.reloadAllTabs();
+            right_.reloadAllTabs();
             break;
 
         case IDM_GO_BACK:

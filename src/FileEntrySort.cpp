@@ -49,4 +49,8 @@ int findByPrefix(const std::vector<FileEntry>& entries, const std::wstring& pref
     return -1;
 }
 
+void removeHidden(std::vector<FileEntry>& entries) {
+    std::erase_if(entries, [](const FileEntry& e) { return (e.attributes & FILE_ATTRIBUTE_HIDDEN) != 0; });
+}
+
 }  // namespace FileEntrySort

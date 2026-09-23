@@ -117,3 +117,10 @@ TEST_CASE("findByPrefix wraps past the end only when asked to") {
     CHECK(FileEntrySort::findByPrefix(entries, L"a", 1, true) == 0);
     CHECK(FileEntrySort::findByPrefix(entries, L"a", 99, true) == 0);  // out-of-range start begins at the top
 }
+
+TEST_CASE("removeHidden drops entries with the hidden attribute, keeping order") {
+    std::vector<FileEntry> entries{makeEntry(L"a"), makeEntry(L"secret"), makeEntry(L"b")};
+    entries[1].attributes |= FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM;
+    FileEntrySort::removeHidden(entries);
+    CHECK(namesOf(entries) == std::vector<std::wstring>{L"a", L"b"});
+}

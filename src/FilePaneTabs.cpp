@@ -486,6 +486,16 @@ void FilePane::invalidateTabsMatchingPath(const std::wstring& path) {
     if (liveMatched) refresh();
 }
 
+void FilePane::reloadAllTabs() {
+    for (size_t i = 0; i < tabs_.size(); ++i) {
+        if (static_cast<int>(i) == activeTab_) continue;  // live_ is refreshed below
+        tabs_[i].content.entries.clear();  // re-enumerated next time the tab is shown
+        tabs_[i].selectedIndices.clear();
+        tabs_[i].focusedIndex = -1;
+    }
+    refresh();
+}
+
 void FilePane::newTab() {
     syncActiveTabIntoStorage();
 
