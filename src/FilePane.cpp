@@ -281,6 +281,20 @@ void FilePane::applyEntries(std::vector<FileEntry> entries) {
 
 void FilePane::sortEntries() {
     FileEntrySort::sort(live_.entries, live_.sortColumn, live_.sortAscending);
+    updateSortArrow();
+}
+
+void FilePane::updateSortArrow() {
+    HWND header = ListView_GetHeader(hwnd_);
+    const int count = Header_GetItemCount(header);
+    for (int i = 0; i < count; ++i) {
+        HDITEMW item{};
+        item.mask = HDI_FORMAT;
+        if (!Header_GetItem(header, i, &item)) continue;
+        item.fmt &= ~(HDF_SORTUP | HDF_SORTDOWN);
+        if (i == live_.sortColumn) item.fmt |= live_.sortAscending ? HDF_SORTUP : HDF_SORTDOWN;
+        Header_SetItem(header, i, &item);
+    }
 }
 
 void FilePane::recomputeSelectionStats() {

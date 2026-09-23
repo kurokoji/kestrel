@@ -234,6 +234,7 @@ void FilePane::loadTabIntoLive(int index) {
 
     ListView_SetItemCountEx(hwnd_, static_cast<int>(live_.entries.size()), LVSICF_NOSCROLL);
     InvalidateRect(hwnd_, nullptr, TRUE);
+    updateSortArrow();  // each tab has its own sort column/direction
 
     // The same physical ListView still holds the outgoing tab's selected
     // rows; clear them so they don't merge into this tab's restored set.

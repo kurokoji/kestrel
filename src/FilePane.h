@@ -217,6 +217,7 @@ private:
 
     void applyEntries(std::vector<FileEntry> entries);
     void sortEntries();
+    void updateSortArrow();  // ▲/▼ on the live tab's sort column header
     void recomputeSelectionStats();
     void activateEntry(int index);
     std::wstring pathForIndex(int index) const;
