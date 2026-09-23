@@ -23,4 +23,9 @@ int findByPrefix(const std::vector<FileEntry>& entries, const std::wstring& pref
 // Removes FILE_ATTRIBUTE_HIDDEN entries (View > 隠しファイル off).
 void removeHidden(std::vector<FileEntry>& entries);
 
+// Row indices of the entries named in `names` (case-insensitive), in list
+// order; names no longer present are skipped. Carries a selection across a
+// re-enumeration, where row numbers shift but names don't.
+std::vector<int> indicesOfNames(const std::vector<FileEntry>& entries, const std::vector<std::wstring>& names);
+
 }  // namespace FileEntrySort

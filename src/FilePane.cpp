@@ -55,6 +55,21 @@ LRESULT CALLBACK SearchBoxSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
     }
     return DefSubclassProc(hwnd, msg, wParam, lParam);
 }
+
+// Middle-click on a folder row opens it in a background tab. The ListView
+// itself ignores the middle button, so it's caught here.
+LRESULT CALLBACK ListMiddleClickSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR /*id*/,
+                                             DWORD_PTR refData) {
+    if (msg == WM_MBUTTONUP) {
+        auto* pane = reinterpret_cast<FilePane*>(refData);
+        LVHITTESTINFO hit{};
+        hit.pt = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+        const int idx = ListView_HitTest(hwnd, &hit);
+        if (idx >= 0 && (hit.flags & LVHT_ONITEM)) pane->openRowInBackgroundTab(idx);
+        return 0;
+    }
+    return DefSubclassProc(hwnd, msg, wParam, lParam);
+}
 }  // namespace
 
 bool FilePane::create(HWND parent, HINSTANCE hInstance, int controlId, int paneId) {
@@ -148,6 +163,11 @@ bool FilePane::create(HWND parent, HINSTANCE hInstance, int controlId, int paneI
         [this](POINT pt) { return dropHitTest(pt); },
         [this](intptr_t key) { setDropHighlight(static_cast<int>(key) - 1); },
     });
+    FileDropTarget::registerOn(tabHwnd_, {
+        [this](POINT pt) { return tabDropHitTest(pt); },
+        [this](intptr_t key) { setTabDropHighlight(static_cast<int>(key) - 1); },
+    });
+    SetWindowSubclass(hwnd_, ListMiddleClickSubclassProc, 2, reinterpret_cast<DWORD_PTR>(this));
 
     return true;
 }
@@ -236,13 +256,32 @@ void FilePane::handleDirResult(std::unique_ptr<EnumerationResult> result) {
 
     const bool wasRecycleBin = (live_.path == kRecycleBinPath);
     // The ListView keeps selected/focused row *indices* across a new item
-    // count, so a different folder would open with the old folder's row
-    // numbers still selected. A same-folder refresh keeps them.
-    if (_wcsicmp(live_.path.c_str(), pendingNavPath_.c_str()) != 0) {
-        ListView_SetItemState(hwnd_, -1, 0, LVIS_SELECTED | LVIS_FOCUSED);
+    // count, which point at different files once the listing changes
+    // (another folder, or a file added/removed above the selection). A
+    // same-folder refresh carries the selection over by *name* instead.
+    const bool samePath = _wcsicmp(live_.path.c_str(), pendingNavPath_.c_str()) == 0;
+    std::vector<std::wstring> keepSelected;
+    std::wstring keepFocused;
+    if (samePath) {
+        keepSelected = selectedNames();
+        if (const int f = ListView_GetNextItem(hwnd_, -1, LVNI_FOCUSED); f >= 0 && static_cast<size_t>(f) < live_.entries.size()) {
+            keepFocused = live_.entries[f].name;
+        }
     }
+    ListView_SetItemState(hwnd_, -1, 0, LVIS_SELECTED | LVIS_FOCUSED);
     live_.path = pendingNavPath_;
     applyEntries(std::move(result->entries));
+    if (samePath) {
+        for (int idx : FileEntrySort::indicesOfNames(live_.entries, keepSelected)) {
+            ListView_SetItemState(hwnd_, idx, LVIS_SELECTED, LVIS_SELECTED);
+        }
+        if (!keepFocused.empty()) {
+            for (int idx : FileEntrySort::indicesOfNames(live_.entries, {keepFocused})) {
+                ListView_SetItemState(hwnd_, idx, LVIS_FOCUSED, LVIS_FOCUSED);
+            }
+        }
+        recomputeSelectionStats();
+    }
     beginPendingRename();
     // drawTabItem reads live_.path directly for the active tab's label,
     // so there's no separate tab-control item text to update here - just
@@ -274,9 +313,8 @@ void FilePane::applyEntries(std::vector<FileEntry> entries) {
     ListView_SetItemCountEx(hwnd_, static_cast<int>(live_.entries.size()), LVSICF_NOSCROLL);
     InvalidateRect(hwnd_, nullptr, FALSE);
 
-    // The control keeps its selected rows across a same-folder refresh
-    // (e.g. a DirectoryWatcher reload), so count what it actually still
-    // has selected rather than assuming nothing is.
+    // Count what the control actually has selected rather than assuming
+    // nothing is (tab restores and same-folder refreshes reselect rows).
     recomputeSelectionStats();
 }
 
@@ -314,6 +352,12 @@ void FilePane::recomputeSelectionStats() {
 std::wstring FilePane::pathForIndex(int index) const {
     if (index < 0 || static_cast<size_t>(index) >= live_.entries.size()) return L"";
     return joinPath(live_.path, live_.entries[index].name);
+}
+
+void FilePane::openRowInBackgroundTab(int index) {
+    if (index < 0 || static_cast<size_t>(index) >= live_.entries.size()) return;
+    if (live_.path == kRecycleBinPath || !live_.entries[index].isDirectory()) return;
+    openInBackgroundTab(joinPath(live_.path, live_.entries[index].name));
 }
 
 void FilePane::activateEntry(int index) {

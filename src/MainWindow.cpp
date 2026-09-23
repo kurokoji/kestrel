@@ -234,6 +234,8 @@ LRESULT MainWindow::wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             RevokeDragDrop(tree_.hwnd());
             RevokeDragDrop(left_.hwnd());
             RevokeDragDrop(right_.hwnd());
+            RevokeDragDrop(left_.tabHwnd());
+            RevokeDragDrop(right_.tabHwnd());
             saveSession();
             if (customFont_) DeleteObject(customFont_);
             PostQuitMessage(0);
@@ -376,6 +378,7 @@ void MainWindow::onCreate() {
     SetWindowSubclass(right_.hwnd(), XButtonForwardSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
 
     tree_.onNavigate = [this](const std::wstring& path) { activePane().navigate(path, true); };
+    tree_.onOpenInNewTab = [this](const std::wstring& path) { activePane().openInBackgroundTab(path); };
 
     // Both panes navigate independently and finish asynchronously in
     // background threads; only refresh the address bar/tree/status bar

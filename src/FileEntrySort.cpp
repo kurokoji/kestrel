@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cwctype>
+#include <unordered_set>
 
 namespace FileEntrySort {
 
@@ -51,6 +52,19 @@ int findByPrefix(const std::vector<FileEntry>& entries, const std::wstring& pref
 
 void removeHidden(std::vector<FileEntry>& entries) {
     std::erase_if(entries, [](const FileEntry& e) { return (e.attributes & FILE_ATTRIBUTE_HIDDEN) != 0; });
+}
+
+std::vector<int> indicesOfNames(const std::vector<FileEntry>& entries, const std::vector<std::wstring>& names) {
+    std::unordered_set<std::wstring> wanted;
+    for (std::wstring name : names) {
+        std::ranges::transform(name, name.begin(), ::towlower);
+        wanted.insert(std::move(name));
+    }
+    std::vector<int> result;
+    for (size_t i = 0; i < entries.size() && result.size() < wanted.size(); ++i) {
+        if (wanted.contains(entries[i].lowercaseName)) result.push_back(static_cast<int>(i));
+    }
+    return result;
 }
 
 }  // namespace FileEntrySort

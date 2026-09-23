@@ -166,6 +166,12 @@ commit - don't let it drift out of sync with what the app actually does.
   previous thread - this is relied on deliberately in `DirectoryModel`
   and `DirectoryWatcher` as the "cancel and restart" mechanism. Don't
   "simplify" that into a raw `std::thread` without re-adding cancellation.
+- **Update: `loadTabIntoLive` now always calls `navigate()` for the tab
+  it shows (cached entries are displayed first, then replaced), which
+  re-arms `watcher_` and refreshes a stale cache on every tab switch.**
+  This became necessary once dropping onto a tab (hover-to-switch) made
+  "files moved while their tab was in the background" routine. The
+  history below explains why the cache could go stale.
 - **`FilePane`'s `watcher_` is one `DirectoryWatcher` instance per pane,
   not per tab, and it's only re-armed inside `handleDirResult` (i.e. on
   an actual `navigate()`).** `switchToTab`/`loadTabIntoLive` restore a
@@ -393,10 +399,11 @@ commit - don't let it drift out of sync with what the app actually does.
   selection got cleared and the view jumped to the top - reported as a
   usability bug, since `LVS_OWNERDATA` has no memory of its own for
   per-tab selection/scroll (each tab reuses the same physical ListView).
-  Indices are safe to reuse directly on restore without any staleness
-  check, since a background (inactive) tab's `DirectoryWatcher` isn't
-  running, so its `entries` snapshot can't change shape while it isn't
-  live. Restoring selection via `LVM_SETITEMSTATE` fires `LVN_ITEMCHANGED`
+  Indices are reapplied against the cached `entries` they were taken
+  from; the re-enumeration `loadTabIntoLive` then starts carries the
+  selection over *by name* (`handleDirResult`'s same-path branch,
+  `FileEntrySort::indicesOfNames`), since files may have been added or
+  removed meanwhile and row numbers would then point at other files. Restoring selection via `LVM_SETITEMSTATE` fires `LVN_ITEMCHANGED`
   the same as a real click would, which would double-count on top of the
   `live_ = t.content` restore already done - so `recomputeSelectionStats()`
   is called afterward to get the authoritative count from the control's

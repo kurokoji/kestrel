@@ -74,6 +74,10 @@ public:
     bool canGoForward() const { return !live_.forward.empty(); }
 
     void newTab();
+    // Middle-click on a folder: a new tab right after the active one,
+    // left in the background (it loads when first shown).
+    void openInBackgroundTab(const std::wstring& path);
+    void openRowInBackgroundTab(int index);  // no-op unless the row is a real folder
     void closeTab(int index = -1);  // -1 = the active tab; a no-op if it's the only one left
     void cycleTab(bool forward);  // Ctrl+Tab / Ctrl+Shift+Tab; wraps, no-op with one tab
 
@@ -232,6 +236,17 @@ private:
     // point, and which row to paint as the drop destination (-1 = none).
     FileDropTarget::Hit dropHitTest(POINT pt) const;
     void setDropHighlight(int index);
+
+    // Same for the tab strip: dropping on a tab puts the items in that
+    // tab's folder, and hovering there for a moment switches to it.
+    FileDropTarget::Hit tabDropHitTest(POINT pt);
+    void setTabDropHighlight(int index);
+    const std::wstring& tabPathAt(int index) const;
+    static constexpr ULONGLONG kTabDropSwitchDelayMs = 600;
+    int tabDropHoverIndex_ = -1;   // tab framed as the drop target by drawTabItem
+    int tabDropTimingIndex_ = -1;  // tab the cursor rests on, for the hover-to-switch delay
+    ULONGLONG tabDropHoverSince_ = 0;
+    ULONGLONG tabDropLastHit_ = 0;
 
     // Starts the in-place rename doMkdir() queued, once a refresh lists
     // the new folder (called from handleDirResult).

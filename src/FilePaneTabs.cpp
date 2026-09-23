@@ -1,5 +1,6 @@
 #include "FilePane.h"
 #include "DriveBadge.h"
+#include "DropTargetPath.h"
 #include "TabCycle.h"
 
 #include <windowsx.h>
@@ -201,6 +202,11 @@ LRESULT CALLBACK FilePane::TabStripSubclassProc(HWND hwnd, UINT msg, WPARAM wPar
             if (PtInRect(&hoverRect, pt)) hovered = idx;
         }
         pane->setHoveredCloseTab(hovered);
+    } else if (msg == WM_MBUTTONUP) {
+        // Middle-click closes a tab, as in browsers and Explorer.
+        const int idx = pane->hitTestTab({GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)});
+        if (idx >= 0) pane->closeTab(idx);
+        return 0;
     } else if (msg == WM_MOUSELEAVE) {
         pane->setHoveredCloseTab(-1);
     } else if (msg == WM_CAPTURECHANGED) {
@@ -267,12 +273,12 @@ void FilePane::loadTabIntoLive(int index) {
     }
     recomputeSelectionStats();
 
-    // A tab that's never been visited (just restored from a saved
-    // session, or freshly created) starts with no entries - load it now.
-    // A genuinely empty folder just re-confirms as empty; harmless.
-    if (live_.entries.empty() && !live_.path.empty()) {
-        navigate(live_.path, false);
-    }
+    // Always re-enumerate, even with cached entries: the cache is shown
+    // immediately, but it may be stale (a background tab has no watcher -
+    // e.g. its files were just dragged onto another tab), and this is also
+    // what re-arms watcher_ onto this tab's folder. Same-path results keep
+    // the selection/scroll restored above.
+    if (!live_.path.empty()) navigate(live_.path, false);
 }
 
 void FilePane::switchToTab(int index) {
@@ -496,6 +502,46 @@ void FilePane::reloadAllTabs() {
     refresh();
 }
 
+const std::wstring& FilePane::tabPathAt(int index) const {
+    static const std::wstring kNone;
+    if (index == activeTab_) return live_.path;
+    if (index < 0 || static_cast<size_t>(index) >= tabs_.size()) return kNone;
+    return tabs_[index].content.path;
+}
+
+FileDropTarget::Hit FilePane::tabDropHitTest(POINT pt) {
+    const int idx = hitTestTab(pt);
+    const ULONGLONG now = GetTickCount64();
+    // OLE calls this repeatedly while the cursor rests; a gap means a new
+    // drag (or re-entry), which starts its own delay.
+    if (idx != tabDropTimingIndex_ || now - tabDropLastHit_ > 250) {
+        tabDropTimingIndex_ = idx;
+        tabDropHoverSince_ = now;
+    } else if (idx >= 0 && idx != activeTab_ && now - tabDropHoverSince_ >= kTabDropSwitchDelayMs) {
+        switchToTab(idx);  // so the drag can continue into a folder inside that tab
+    }
+    tabDropLastHit_ = now;
+    if (idx < 0) return {};
+    return {DropTargetPath::candidates(tabPathAt(idx), L"", false), idx + 1};
+}
+
+void FilePane::setTabDropHighlight(int index) {
+    tabDropHoverIndex_ = index;
+    InvalidateRect(tabHwnd_, nullptr, FALSE);
+}
+
+void FilePane::openInBackgroundTab(const std::wstring& path) {
+    TabState t;
+    t.content.path = path;
+    t.content.sortColumn = defaultSortColumn_;
+    t.content.sortAscending = defaultSortAscending_;
+    tabs_.insert(tabs_.begin() + activeTab_ + 1, std::move(t));  // after the active one; its index is unchanged
+    hoveredCloseTab_ = -1;
+    relayoutTabs();
+    InvalidateRect(tabHwnd_, nullptr, TRUE);
+    if (onTabCountChanged) onTabCountChanged();
+}
+
 void FilePane::newTab() {
     syncActiveTabIntoStorage();
 
@@ -623,6 +669,14 @@ void FilePane::drawTabItem(HDC hdc, const RECT& r, int index) {
 
     SetTextColor(hdc, GetSysColor(COLOR_WINDOWTEXT));
     DrawTextW(hdc, label.c_str(), -1, &textRect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+
+    if (index == tabDropHoverIndex_) {
+        // Drop target outline: a 2px highlight-colored frame.
+        RECT frame = r;
+        FrameRect(hdc, &frame, GetSysColorBrush(COLOR_HIGHLIGHT));
+        InflateRect(&frame, -1, -1);
+        FrameRect(hdc, &frame, GetSysColorBrush(COLOR_HIGHLIGHT));
+    }
 
     if (tabs_.size() > 1) {
         const bool hovered = (index == hoveredCloseTab_);

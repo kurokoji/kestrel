@@ -21,6 +21,18 @@ std::wstring lowerCopy(std::wstring s) {
 }
 }  // namespace
 
+namespace {
+LRESULT CALLBACK TreeMiddleClickSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR /*id*/,
+                                             DWORD_PTR refData) {
+    if (msg == WM_MBUTTONUP) {
+        reinterpret_cast<TreePane*>(refData)->openItemInNewTab({GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)});
+        return 0;
+    }
+    if (msg == WM_MBUTTONDOWN) return 0;  // the tree would otherwise take focus from the file list
+    return DefSubclassProc(hwnd, msg, wParam, lParam);
+}
+}  // namespace
+
 bool TreePane::create(HWND parent, HINSTANCE hInstance, int controlId) {
     parentWnd_ = parent;
     hwnd_ = CreateWindowExW(
@@ -40,11 +52,22 @@ bool TreePane::create(HWND parent, HINSTANCE hInstance, int controlId) {
 
     addRootItems();
 
+    SetWindowSubclass(hwnd_, TreeMiddleClickSubclassProc, 2, reinterpret_cast<DWORD_PTR>(this));
+
     FileDropTarget::registerOn(hwnd_, {
         [this](POINT pt) { return dropHitTest(pt); },
         [this](intptr_t key) { TreeView_SelectDropTarget(hwnd_, reinterpret_cast<HTREEITEM>(key)); },
     });
     return true;
+}
+
+void TreePane::openItemInNewTab(POINT clientPt) {
+    TVHITTESTINFO hit{};
+    hit.pt = clientPt;
+    const HTREEITEM item = TreeView_HitTest(hwnd_, &hit);
+    if (!item || !(hit.flags & (TVHT_ONITEMLABEL | TVHT_ONITEMICON))) return;
+    const NodeData* data = dataOf(item);
+    if (data && !data->path.empty() && onOpenInNewTab) onOpenInNewTab(data->path);
 }
 
 FileDropTarget::Hit TreePane::dropHitTest(POINT pt) {

@@ -44,6 +44,10 @@ public:
     // Called when the user clicks or presses Enter on a directory node.
     std::function<void(const std::wstring& path)> onNavigate;
 
+    // Middle-click on a node: open it in a new background tab.
+    std::function<void(const std::wstring& path)> onOpenInNewTab;
+    void openItemInNewTab(POINT clientPt);  // called from the tree's middle-button subclass
+
 private:
     struct NodeData {
         std::wstring path;

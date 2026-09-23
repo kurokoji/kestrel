@@ -124,3 +124,9 @@ TEST_CASE("removeHidden drops entries with the hidden attribute, keeping order")
     FileEntrySort::removeHidden(entries);
     CHECK(namesOf(entries) == std::vector<std::wstring>{L"a", L"b"});
 }
+
+TEST_CASE("indicesOfNames finds rows by name case-insensitively, in list order") {
+    const std::vector<FileEntry> entries{makeEntry(L"a"), makeEntry(L"B"), makeEntry(L"c")};
+    CHECK(FileEntrySort::indicesOfNames(entries, {L"c", L"b", L"gone"}) == std::vector<int>{1, 2});
+    CHECK(FileEntrySort::indicesOfNames(entries, {}).empty());
+}
