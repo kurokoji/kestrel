@@ -57,7 +57,16 @@ HTREEITEM TreePane::addNode(HTREEITEM parent, const std::wstring& text, const st
     tvis.item.iImage = icon;
     tvis.item.iSelectedImage = icon;
     const HTREEITEM item = TreeView_InsertItem(hwnd_, &tvis);
-    if (!path.empty()) pathIndex_[lowerCopy(path)] = item;
+    // try_emplace, not []: a path can legitimately end up in the tree
+    // twice - e.g. the root "ダウンロード" shortcut and, once "ユーザー
+    // プロファイル" is expanded, its real Downloads subfolder child,
+    // both pointing at the same real path. The root shortcuts are always
+    // inserted first (addRootItems runs before any populateChildren),
+    // so keeping whichever entry got there first means trySelectPath()
+    // (and therefore which node lights up after a navigation) prefers
+    // the shortcut over a same-path descendant instead of whichever was
+    // inserted most recently.
+    if (!path.empty()) pathIndex_.try_emplace(lowerCopy(path), item);
     return item;
 }
 

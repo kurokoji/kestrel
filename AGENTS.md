@@ -511,6 +511,24 @@ commit - don't let it drift out of sync with what the app actually does.
   (tab background, close-hover) switched to `GetSysColorBrush` (owned by
   the system, no delete needed, and it stays correct if the user changes
   their color scheme, unlike a one-time cache would).
+- **`TreePane::pathIndex_` can legitimately have two different
+  `HTREEITEM`s wanting the same path key** - e.g. the root "ダウンロード"
+  shortcut node and, once "ユーザープロファイル" is expanded, its real
+  Downloads subfolder child, both real paths to the same folder.
+  `addNode` used to just overwrite the map entry (`pathIndex_[key] =
+  item`), so whichever got inserted *last* won - meaning expanding
+  "ユーザープロファイル" silently rebound every shortcut path it happens
+  to share with a root node onto its own descendant. Reported as: click
+  the root "ダウンロード"/"ドキュメント" node after having expanded
+  "ユーザープロファイル", and the *descendant* node under "ユーザープロ
+  ファイル" lights up instead. Fixed by switching to
+  `pathIndex_.try_emplace(key, item)` - keeps whichever entry got there
+  first rather than the most recent, and since `addRootItems` always
+  inserts every root shortcut before any `populateChildren` call can run,
+  "first" is always the shortcut. Verified live: expanded "ユーザープロ
+  ファイル" via `TVM_EXPAND`, selected+navigated the root "ダウンロード"
+  node via `TVM_SELECTITEM`/Enter, then confirmed `TVM_GETNEXTITEM`/
+  `TVGN_CARET` returned that same root node's handle, not the descendant's.
 - Clicking the tree's "PC" node navigates the active pane to a synthetic
   drive listing (C:\, D:\, ...), matching what other file managers do.
   It's keyed off `kThisPcPath` (`Types.h`) - the shell's own
