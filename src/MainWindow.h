@@ -55,6 +55,7 @@ private:
 
     void refreshUiForActivePane();
     void updateStatusBar();
+    void updateFreeSpace();  // re-reads the active pane's drive; cached in freeSpaceText_
     void updateActivePaneFrame();
     void updatePreview();
 
@@ -87,6 +88,7 @@ private:
     HWND toolbar_ = nullptr;
     HWND addressBar_ = nullptr;
     HWND statusBar_ = nullptr;
+    std::wstring freeSpaceText_;  // status bar's right part; empty for This PC / Recycle Bin
 
     // Non-null only when the user has picked a custom UI font via Tools >
     // Options (ChooseFontW) - null means every control just keeps using

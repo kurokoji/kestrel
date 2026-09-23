@@ -20,6 +20,11 @@ inline std::wstring formatSize(uint64_t bytes) {
     return std::format(L"{:.1f} {}", value, units[unit]);
 }
 
+// "1.5 GB 空き / 4.0 GB" - the drive list's size column and the status bar.
+inline std::wstring formatFreeSpace(uint64_t freeBytes, uint64_t totalBytes) {
+    return std::format(L"{} 空き / {}", formatSize(freeBytes), formatSize(totalBytes));
+}
+
 inline std::wstring formatFileTime(const FILETIME& ft) {
     if (ft.dwLowDateTime == 0 && ft.dwHighDateTime == 0) return L"";
     FILETIME local{};

@@ -18,3 +18,7 @@ TEST_CASE("formatFileTime returns empty string for a zero FILETIME") {
     FILETIME ft{};
     CHECK(Formatting::formatFileTime(ft) == L"");
 }
+
+TEST_CASE("formatFreeSpace shows free and total space the way the drive list does") {
+    CHECK(Formatting::formatFreeSpace(1024ull * 1024 * 1024 * 3 / 2, 1024ull * 1024 * 1024 * 4) == L"1.5 GB 空き / 4.0 GB");
+}

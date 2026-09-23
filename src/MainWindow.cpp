@@ -619,6 +619,10 @@ void MainWindow::layoutChildren() {
     SIZE tbSize{};
     SendMessageW(toolbar_, TB_GETMAXSIZE, 0, reinterpret_cast<LPARAM>(&tbSize));
     SendMessageW(statusBar_, WM_SIZE, 0, 0);
+    // Right part: the active drive's free space, sized for "999.9 GB 空き / 999.9 GB".
+    const int freeSpaceWidth = MulDiv(210, static_cast<int>(GetDpiForWindow(hwnd_)), 96);
+    int parts[2] = {std::max(0, width - freeSpaceWidth), -1};
+    SendMessageW(statusBar_, SB_SETPARTS, 2, reinterpret_cast<LPARAM>(parts));
     RECT sbRect{};
     GetWindowRect(statusBar_, &sbRect);
 
@@ -725,7 +729,20 @@ void MainWindow::refreshUiForActivePane() {
     FilePane& p = activePane();
     SetWindowTextW(addressBar_, p.currentPath().c_str());
     tree_.trySelectPath(p.currentPath());
+    updateFreeSpace();
     updateStatusBar();
+}
+
+void MainWindow::updateFreeSpace() {
+    // Asked on navigation/refresh/pane switch only, not per selection
+    // change: on a network share each call is a round trip.
+    const std::wstring& path = activePane().currentPath();
+    freeSpaceText_.clear();
+    ULARGE_INTEGER freeAvail{}, total{};
+    if (!path.empty() && !path.starts_with(L"::") &&
+        GetDiskFreeSpaceExW(path.c_str(), &freeAvail, &total, nullptr)) {
+        freeSpaceText_ = Formatting::formatFreeSpace(freeAvail.QuadPart, total.QuadPart);
+    }
 }
 
 void MainWindow::updatePreview() {
@@ -742,6 +759,7 @@ void MainWindow::updateStatusBar() {
         text = std::format(L"{} 個のファイル | {} 個のフォルダー", s.fileCount, s.dirCount);
     }
     SendMessageW(statusBar_, SB_SETTEXTW, 0, reinterpret_cast<LPARAM>(text.c_str()));
+    SendMessageW(statusBar_, SB_SETTEXTW, 1, reinterpret_cast<LPARAM>(freeSpaceText_.c_str()));
 }
 
 void MainWindow::doCopyToOther() {

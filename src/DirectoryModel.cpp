@@ -199,8 +199,7 @@ void DirectoryModel::run(std::stop_token stopToken, std::wstring path, HWND noti
             ULARGE_INTEGER freeAvail{}, total{};
             if (GetDiskFreeSpaceExW(root.c_str(), &freeAvail, &total, nullptr)) {
                 entry.size = total.QuadPart;  // so sorting by size is meaningful (drive capacity)
-                entry.formattedSize =
-                    std::format(L"{} 空き / {}", Formatting::formatSize(freeAvail.QuadPart), Formatting::formatSize(total.QuadPart));
+                entry.formattedSize = Formatting::formatFreeSpace(freeAvail.QuadPart, total.QuadPart);
             }
             // Drives that aren't ready (e.g. an empty optical drive) just
             // fail the call above and show a blank size, same as any other
