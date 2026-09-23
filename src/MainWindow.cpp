@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "AddressInput.h"
 #include "WindowLayout.h"
 #include "WindowPlacement.h"
 #include "ClipboardFiles.h"
@@ -13,6 +14,7 @@
 #include <commdlg.h>
 #include <shellapi.h>
 #include <shlobj.h>
+#include <shlwapi.h>
 #include <windowsx.h>
 
 #include <algorithm>
@@ -586,6 +588,8 @@ void MainWindow::createAddressBar() {
                          reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_ADDRESSBAR)), hInstance_, nullptr);
     SendMessageW(addressBar_, WM_SETFONT, reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)), TRUE);
     SetWindowSubclass(addressBar_, AddressBarSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
+    // Path completion dropdown, as in Explorer's address bar.
+    SHAutoComplete(addressBar_, SHACF_FILESYSTEM);
 }
 
 void MainWindow::createStatusBar() {
@@ -789,9 +793,42 @@ void MainWindow::doClipboardPaste() {
 
 void MainWindow::onAddressBarEnter() {
     const int len = GetWindowTextLengthW(addressBar_);
-    std::wstring path(len, L'\0');
-    if (len > 0) GetWindowTextW(addressBar_, path.data(), len + 1);
-    if (!path.empty()) activePane().navigate(path, true);
+    std::wstring typed(len, L'\0');
+    if (len > 0) GetWindowTextW(addressBar_, typed.data(), len + 1);
+
+    // %USERPROFILE% etc. first, then relative paths/quotes/slashes.
+    if (const DWORD needed = ExpandEnvironmentStringsW(typed.c_str(), nullptr, 0); needed > 0) {
+        std::wstring expanded(needed, L'\0');
+        ExpandEnvironmentStringsW(typed.c_str(), expanded.data(), needed);
+        expanded.resize(needed - 1);
+        typed = std::move(expanded);
+    }
+    std::wstring path = AddressInput::resolve(typed, activePane().currentPath());
+    if (path.empty()) return;
+
+    // "shell:Downloads" and friends: let the shell map them to a real folder.
+    if (_wcsnicmp(path.c_str(), L"shell:", 6) == 0) {
+        PIDLIST_ABSOLUTE pidl = nullptr;
+        wchar_t resolved[MAX_PATH] = L"";
+        const bool ok = SUCCEEDED(SHParseDisplayName(path.c_str(), nullptr, &pidl, 0, nullptr)) &&
+                        SHGetPathFromIDListW(pidl, resolved);
+        CoTaskMemFree(pidl);
+        if (!ok) {
+            Dialogs::showError(hwnd_, L"Kestrel", (L"場所が見つかりません:\n" + path).c_str());
+            return;
+        }
+        path = resolved;
+    }
+
+    // A file's path opens it, as in Explorer; anything else is navigated
+    // to (and reports its own error if it doesn't exist).
+    const DWORD attrs = path.starts_with(L"::") ? INVALID_FILE_ATTRIBUTES : GetFileAttributesW(path.c_str());
+    if (attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY)) {
+        FileOperations::openItem(hwnd_, path);
+        SetWindowTextW(addressBar_, activePane().currentPath().c_str());
+        return;
+    }
+    activePane().navigate(path, true);
 }
 
 void MainWindow::onXButton(WORD xButton) {

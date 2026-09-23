@@ -37,6 +37,7 @@ add_executable(kestrel WIN32
     src/DropTargetPath.cpp
     src/FileDropTarget.cpp
     src/NameParts.cpp
+    src/AddressInput.cpp
     src/kestrel.rc
 )
 
@@ -96,6 +97,8 @@ if(KESTREL_BUILD_TESTS)
         src/DropTargetPath.cpp
         tests/NamePartsTests.cpp
         src/NameParts.cpp
+        tests/AddressInputTests.cpp
+        src/AddressInput.cpp
     )
 
     target_include_directories(kestrel_tests PRIVATE
