@@ -6,6 +6,7 @@
 #include "FileOperations.h"
 #include "Formatting.h"
 #include "Messages.h"
+#include "RecycleBinOps.h"
 #include "Resource.h"
 
 #include <commctrl.h>
@@ -328,6 +329,7 @@ void MainWindow::applyFont(const LOGFONTW& lf) {
         setFont(pane->tabHwnd());
         setFont(pane->searchBoxHwnd());
         setFont(pane->newTabButtonHwnd());
+        setFont(pane->emptyRecycleBinButtonHwnd());
     }
 
     if (old) DeleteObject(old);
@@ -396,6 +398,10 @@ void MainWindow::onCreate() {
     auto onTabCountChanged = [this] { layoutChildren(); };
     left_.onTabCountChanged = onTabCountChanged;
     right_.onTabCountChanged = onTabCountChanged;
+
+    auto onEmptyButtonVisibility = [this] { layoutChildren(); };
+    left_.onEmptyButtonVisibilityChanged = onEmptyButtonVisibility;
+    right_.onEmptyButtonVisibilityChanged = onEmptyButtonVisibility;
 
     std::wstring startPath = L"C:\\";
     PWSTR profile = nullptr;
@@ -620,6 +626,12 @@ void MainWindow::layoutChildren() {
         ShowWindow(p.hwnd(), cmd);
         ShowWindow(p.tabHwnd(), cmd);
         ShowWindow(p.newTabButtonHwnd(), cmd);
+        // Re-shown (if applicable) by the setBounds() call right below,
+        // which only shows it when that pane's currentPath() is actually
+        // the Recycle Bin - hiding it outright here just makes sure it
+        // doesn't linger visible while its whole pane is supposed to be
+        // hidden (singlePaneMode_'s inactive pane).
+        if (!visible) ShowWindow(p.emptyRecycleBinButtonHwnd(), SW_HIDE);
     };
     if (singlePaneMode_) {
         showPane(inactivePane(), false);
@@ -791,6 +803,16 @@ void MainWindow::onContextMenu(HWND target, int screenX, int screenY) {
         pane->selectSingleItemAtClientPoint(clientPt);
     }
 
+    if (pane->currentPath() == kRecycleBinPath) {
+        auto names = pane->selectedNames();
+        if (!names.empty()) {
+            if (shellMenu_.showAndInvoke(hwnd_, RecycleBinOps::get<IContextMenu>(hwnd_, names), screenPt)) {
+                pane->refresh();
+            }
+        }
+        return;
+    }
+
     auto paths = pane->selectedPaths();
     if (!paths.empty()) {
         if (shellMenu_.showAndInvoke(hwnd_, paths, screenPt)) pane->refresh();
@@ -825,6 +847,14 @@ void MainWindow::onCommand(int id, HWND ctrl) {
     if (ctrl && ctrl == right_.newTabButtonHwnd()) {
         right_.activate();
         right_.newTab();
+        return;
+    }
+    if (ctrl && ctrl == left_.emptyRecycleBinButtonHwnd()) {
+        left_.emptyRecycleBin();
+        return;
+    }
+    if (ctrl && ctrl == right_.emptyRecycleBinButtonHwnd()) {
+        right_.emptyRecycleBin();
         return;
     }
 

@@ -6,7 +6,10 @@
 #include <shobjidl.h>
 
 bool ShellContextMenu::showAndInvoke(HWND owner, const std::vector<std::wstring>& paths, POINT screenPt) {
-    ComPtr<IContextMenu> menu = ShellSelection::get<IContextMenu>(owner, paths);
+    return showAndInvoke(owner, ShellSelection::get<IContextMenu>(owner, paths), screenPt);
+}
+
+bool ShellContextMenu::showAndInvoke(HWND owner, ComPtr<IContextMenu> menu, POINT screenPt) {
     if (!menu) return false;
 
     ComPtr<IContextMenu3> menu3;

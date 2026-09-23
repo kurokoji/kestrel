@@ -23,6 +23,7 @@ add_executable(kestrel WIN32
     src/FileOperations.cpp
     src/ShellSelection.cpp
     src/ShellContextMenu.cpp
+    src/RecycleBinOps.cpp
     src/SplitterController.cpp
     src/ClipboardFiles.cpp
     src/IconCache.cpp

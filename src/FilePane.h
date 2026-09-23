@@ -41,6 +41,7 @@ public:
     HWND tabHwnd() const { return tabHwnd_; }
     HWND newTabButtonHwnd() const { return newTabButton_; }
     HWND searchBoxHwnd() const { return searchBox_; }
+    HWND emptyRecycleBinButtonHwnd() const { return emptyRecycleBinButton_; }
     int paneId() const { return paneId_; }
 
     // Makes this the active pane by moving keyboard focus to its list
@@ -103,6 +104,10 @@ public:
 
     std::vector<std::wstring> selectedPaths() const;
 
+    // Selected entries' bare names (FileEntry::name), not full paths - what
+    // RecycleBinOps needs, since entries in that view aren't real paths.
+    std::vector<std::wstring> selectedNames() const;
+
     // Path of the single item currently carrying the keyboard focus
     // rectangle, or empty if there is none (used to feed the preview
     // pane). Not the same as the selection - focus and selection can
@@ -113,6 +118,11 @@ public:
     // other pane, unlike copy/move which MainWindow drives directly.
     void doRename();
     void doDelete();
+    // Recycle Bin view only - empties it entirely (the shell shows its own
+    // confirmation). A no-op elsewhere. Restoring items is right-click only
+    // (MainWindow::onContextMenu) - it goes through the Recycle Bin's real
+    // shell menu rather than a verb we'd have to guess/match ourselves.
+    void emptyRecycleBin();
     void doMkdir();
     void doView();
     void doEdit();
@@ -169,6 +179,13 @@ public:
     // needs to give it) can change. MainWindow re-runs layoutChildren()
     // on this same as it does for onSearchVisibilityChanged.
     std::function<void()> onTabCountChanged;
+
+    // Fired when navigation crosses into or out of the Recycle Bin view -
+    // i.e. exactly when the "空にする" button's shown/hidden state changes,
+    // not on every navigation - so MainWindow knows to re-run
+    // layoutChildren() (the button takes a row of space like the search
+    // box does).
+    std::function<void()> onEmptyButtonVisibilityChanged;
 
 private:
     // Shared by the live tab and saved tabs; copy as a unit on switches.
@@ -255,6 +272,8 @@ private:
     POINT dragGhostOffset_{};  // grab point relative to the tab's own top-left, so the ghost doesn't jump under the cursor
     HWND newTabButton_ = nullptr;
     HWND searchBox_ = nullptr;
+    // Shown only while currentPath() == kRecycleBinPath - see setBounds().
+    HWND emptyRecycleBinButton_ = nullptr;
     bool searchVisible_ = false;
     std::wstring searchQuery_;  // lowercased; empty = no active search
     int currentMatchIndex_ = -1;  // custom-drawn blue (not just the yellow match color) regardless of list focus

@@ -600,15 +600,60 @@ commit - don't let it drift out of sync with what the app actually does.
   `FILETIME` the rest of the app's formatting/sorting code expects.
   `VariantTimeToSystemTime`/`VariantClear` need `oleaut32` linked (added
   to `CMakeLists.txt` - `ole32` alone doesn't export them).
-  Deliberately a **read-only view**: entries here are display-only
-  synthesized `FileEntry`s, not real filesystem paths, so opening,
-  renaming, cutting/copying, or dragging them would either silently fail
-  or (worse) construct a bogus concatenated path that happens not to
-  crash but does nothing sane. Rather than guard every operation's entry
-  point separately, `FilePane::selectedPaths()` - the single choke point
-  every cut/copy/delete/drag/context-menu action reads its target list
-  from - returns empty for this view, which disables all of them in one
-  place; `activateEntry()` (open/navigate) and `doRename()` (F2) are
-  guarded directly since they don't go through `selectedPaths()`.
-  Restore-from-recycle-bin isn't implemented at all yet - out of scope
-  for the initial "show it in the tree" ask.
+  Entries here are display-only synthesized `FileEntry`s, not real
+  filesystem paths, so opening, renaming, cutting/copying, or dragging
+  them would either silently fail or (worse) construct a bogus
+  concatenated path that happens not to crash but does nothing sane.
+  Rather than guard every operation's entry point separately,
+  `FilePane::selectedPaths()` - the single choke point every
+  cut/copy/drag/normal-context-menu action reads its target list from -
+  returns empty for this view, which disables all of them in one place;
+  `activateEntry()` (open/navigate) and `doRename()` (F2) are guarded
+  directly since they don't go through `selectedPaths()`. Restore,
+  permanent delete, and emptying the bin *are* supported (see the next
+  entry) - "read-only" only ever meant "not a real path you can
+  copy/move/rename", not "no file operations at all".
+- Recycle Bin file operations (`RecycleBinOps.h/.cpp`) are split across
+  two different mechanisms depending on how reliable the verb name is:
+  - **Restore is right-click-menu only** (`MainWindow::onContextMenu`'s
+    `kRecycleBinPath` branch -> `RecycleBinOps::get<IContextMenu>` ->
+    `ShellContextMenu::showAndInvoke(HWND, ComPtr<IContextMenu>, POINT)`,
+    a new overload that skips `ShellSelection`'s real-path binding and
+    invokes whatever command id the user actually clicked in the real,
+    shown menu). There's no verb-name lookup on this path at all - confirmed
+    live that the recycle bin's real IContextMenu correctly shows "元に戻す"
+    as its first item for a selected item. Deliberately *not* also wired to
+    a button/key: the recycle bin's restore command is exposed under the
+    shell-extension-specific verb `"undelete"` (or possibly `"restore"` on
+    some Windows versions) rather than a universal verb like `"delete"` -
+    unlike delete below, this isn't a case where you can just trust the
+    verb name without live-testing it, and doing so risked a silent no-op.
+  - **Permanent delete and empty-the-bin *are* invoked directly**
+    (`FilePane::doDelete()`'s `kRecycleBinPath` branch, and the
+    `emptyRecycleBinButton_`/`FilePane::emptyRecycleBin()` button below
+    the tab strip - shown/hidden by `setBounds()` and
+    `onEmptyButtonVisibilityChanged`, the same shape as
+    `onSearchVisibilityChanged`/`onTabCountChanged`). Delete uses
+    `RecycleBinOps::deleteItemsPermanently()`'s verb-lookup
+    (`GetCommandString(GCS_VERBW)` matched against `L"delete"`) - trusted
+    without the same live-verification restore got, since `"delete"` is
+    the universal, standard verb every shell item's context menu
+    supports (unlike the recycle-bin-specific restore/undelete), and
+    invoking it on an item *already inside* the Recycle Bin is exactly
+    what Explorer's own "permanently delete" confirmation does. Empty
+    uses the plain `SHEmptyRecycleBinW` API, no verb involved.
+  - `RecycleBinOps::resolvePidls()` re-enumerates the Recycle Bin fresh
+    and matches by `SHGDN_INFOLDER` display name every time an operation
+    runs, rather than holding a PIDL from the original listing - adding a
+    live-PIDL member to `FileEntry` would have made it move-only, which
+    would have broken `FilePane::TabContent`'s copy-as-a-unit contract
+    (see the "タブ" design-decision note) for every ordinary folder too,
+    not just this view. Two distinct deleted items sharing a display name
+    is an accepted, unhandled edge case.
+  - Never live-invoke delete/empty from an agent session without the
+    user's explicit go-ahead on that specific action - both are
+    real, irreversible operations on whatever the user's actual Recycle
+    Bin holds at the time (verified this whole feature by checking the
+    "空にする" button's show/hide and the real right-click menu's item
+    labels only, via `WM_CANCELMODE` to dismiss without picking anything -
+    never by actually clicking delete/empty).

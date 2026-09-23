@@ -1,10 +1,13 @@
 #pragma once
 
+#include "ComPtr.h"
+
 #include <windows.h>
 #include <string>
 #include <vector>
 
-struct IContextMenu3;  // avoids pulling <shobjidl.h> into every includer of this header
+struct IContextMenu;   // avoids pulling <shobjidl.h> into every includer of this header
+struct IContextMenu3;
 
 // Wraps a real shell context menu (IContextMenu::QueryContextMenu /
 // TrackPopupMenu / InvokeCommand) for a right-clicked selection, plus the
@@ -19,6 +22,11 @@ public:
     // pane), false if nothing matched the selection or the menu was
     // dismissed without a choice.
     bool showAndInvoke(HWND owner, const std::vector<std::wstring>& paths, POINT screenPt);
+
+    // Same as above, but for a caller that already has an IContextMenu -
+    // e.g. RecycleBinOps::get<IContextMenu>, whose items aren't real paths
+    // ShellSelection could bind on its own.
+    bool showAndInvoke(HWND owner, ComPtr<IContextMenu> menu, POINT screenPt);
 
     // Forward from the owner's wndProc while showAndInvoke's TrackPopupMenu
     // nested loop is running (only WM_INITMENUPOPUP/WM_DRAWITEM/

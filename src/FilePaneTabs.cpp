@@ -272,9 +272,12 @@ void FilePane::loadTabIntoLive(int index) {
 
 void FilePane::switchToTab(int index) {
     if (index == activeTab_ || index < 0 || index >= static_cast<int>(tabs_.size())) return;
+    const bool wasRecycleBin = (live_.path == kRecycleBinPath);
     syncActiveTabIntoStorage();
     loadTabIntoLive(index);
     InvalidateRect(tabHwnd_, nullptr, TRUE);
+    const bool isRecycleBin = (live_.path == kRecycleBinPath);
+    if (isRecycleBin != wasRecycleBin && onEmptyButtonVisibilityChanged) onEmptyButtonVisibilityChanged();
     if (onNavigated) onNavigated(*this);
 }
 

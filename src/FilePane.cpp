@@ -4,6 +4,7 @@
 #include "FileEntrySort.h"
 #include "FileOperations.h"
 #include "IconCache.h"
+#include "RecycleBinOps.h"
 
 #include <windowsx.h>
 #include <objidl.h>  // must precede gdiplus.h - see AGENTS.md
@@ -97,6 +98,13 @@ bool FilePane::create(HWND parent, HINSTANCE hInstance, int controlId, int paneI
     SendMessageW(searchBox_, WM_SETFONT, reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)), TRUE);
     SetWindowSubclass(searchBox_, SearchBoxSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
 
+    // Hidden outside the Recycle Bin view; setBounds() shows/positions it
+    // based on currentPath().
+    emptyRecycleBinButton_ = CreateWindowExW(0, L"BUTTON", L"ゴミ箱を空にする(&E)",
+                                              WS_CHILD | WS_CLIPSIBLINGS | BS_PUSHBUTTON, 0, 0, 0, 0, parent,
+                                              nullptr, hInstance, nullptr);
+    SendMessageW(emptyRecycleBinButton_, WM_SETFONT, reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)), TRUE);
+
     // LVS_SHOWSELALWAYS: without it, a list-view's selection highlight
     // isn't just dimmed when the control lacks focus - it's fully hidden
     // (comctl32 default). That happens whenever the *whole app* loses
@@ -147,6 +155,7 @@ bool FilePane::create(HWND parent, HINSTANCE hInstance, int controlId, int paneI
 void FilePane::setBounds(const RECT& outer) {
     constexpr int kNewTabButtonWidth = 22;
     constexpr int kSearchBoxHeight = 22;
+    constexpr int kEmptyRecycleBinButtonHeight = 24;
     const int w = outer.right - outer.left;
     const int tabStripW = std::max(0, w - kNewTabButtonWidth);
 
@@ -158,6 +167,14 @@ void FilePane::setBounds(const RECT& outer) {
     placeWithoutRedraw(newTabButton_, outer.left + tabStripW, outer.top, kNewTabButtonWidth, kTabStripHeight);
 
     int listTop = outer.top + tabStripHeight;
+
+    const bool showEmptyButton = (live_.path == kRecycleBinPath);
+    ShowWindow(emptyRecycleBinButton_, showEmptyButton ? SW_SHOWNA : SW_HIDE);
+    if (showEmptyButton) {
+        placeWithoutRedraw(emptyRecycleBinButton_, outer.left, listTop, w, kEmptyRecycleBinButtonHeight);
+        listTop += kEmptyRecycleBinButtonHeight;
+    }
+
     if (searchVisible_) {
         placeWithoutRedraw(searchBox_, outer.left, listTop, w, kSearchBoxHeight);
         listTop += kSearchBoxHeight;
@@ -217,6 +234,7 @@ void FilePane::handleDirResult(std::unique_ptr<EnumerationResult> result) {
         live_.forward.clear();
     }
 
+    const bool wasRecycleBin = (live_.path == kRecycleBinPath);
     live_.path = pendingNavPath_;
     applyEntries(std::move(result->entries));
     // drawTabItem reads live_.path directly for the active tab's label,
@@ -224,6 +242,9 @@ void FilePane::handleDirResult(std::unique_ptr<EnumerationResult> result) {
     // repaint the strip so the new path actually shows.
     InvalidateRect(tabHwnd_, nullptr, TRUE);
     watcher_.watch(live_.path, parentWnd_, reinterpret_cast<WPARAM>(this));
+
+    const bool isRecycleBin = (live_.path == kRecycleBinPath);
+    if (isRecycleBin != wasRecycleBin && onEmptyButtonVisibilityChanged) onEmptyButtonVisibilityChanged();
 
     if (onNavigated) onNavigated(*this);
 }
@@ -298,6 +319,15 @@ std::vector<std::wstring> FilePane::selectedPaths() const {
     return result;
 }
 
+std::vector<std::wstring> FilePane::selectedNames() const {
+    std::vector<std::wstring> result;
+    int idx = -1;
+    while ((idx = ListView_GetNextItem(hwnd_, idx, LVNI_SELECTED)) != -1) {
+        if (static_cast<size_t>(idx) < live_.entries.size()) result.push_back(live_.entries[idx].name);
+    }
+    return result;
+}
+
 void FilePane::setCutPaths(std::vector<std::wstring> paths) {
     cutPaths_.clear();
     cutPaths_.reserve(paths.size());
@@ -326,9 +356,23 @@ void FilePane::doRename() {
 }
 
 void FilePane::doDelete() {
+    if (live_.path == kRecycleBinPath) {
+        auto names = selectedNames();
+        if (!names.empty() && RecycleBinOps::deleteItemsPermanently(parentWnd_, names)) {
+            refresh();
+        }
+        return;
+    }
     auto paths = selectedPaths();
     if (paths.empty()) return;
     if (FileOperations::deleteItems(parentWnd_, paths)) {
+        refresh();
+    }
+}
+
+void FilePane::emptyRecycleBin() {
+    if (live_.path != kRecycleBinPath) return;
+    if (RecycleBinOps::emptyRecycleBin(parentWnd_)) {
         refresh();
     }
 }
