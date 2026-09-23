@@ -432,9 +432,10 @@ void FilePane::doDelete(bool permanent) {
     }
     auto paths = selectedPaths();
     if (paths.empty()) return;
-    if (FileOperations::deleteItems(parentWnd_, paths, permanent)) {
-        refresh();
-    }
+    Undo::Record record{Undo::Kind::Recycle, {}};
+    const bool ok = FileOperations::deleteItems(parentWnd_, paths, permanent, permanent ? nullptr : &record);
+    if (onUndoable) onUndoable(std::move(record));  // may be partial, e.g. cancelled midway
+    if (ok) refresh();
 }
 
 void FilePane::emptyRecycleBin() {
@@ -454,7 +455,10 @@ void FilePane::doMkdir() {
     names.reserve(live_.entries.size());
     for (const auto& e : live_.entries) names.push_back(e.name);
     std::wstring name = NameParts::uniqueName(names, L"新しいフォルダー");
-    if (FileOperations::createDirectory(parentWnd_, live_.path, name)) {
+    Undo::Record record{Undo::Kind::NewFolder, {}};
+    const bool created = FileOperations::createDirectory(parentWnd_, live_.path, name, &record);
+    if (onUndoable) onUndoable(std::move(record));
+    if (created) {
         pendingRenameDir_ = live_.path;
         pendingRenameName_ = std::move(name);
         refresh();
@@ -744,7 +748,10 @@ LRESULT FilePane::handleNotify(NMHDR* nmhdr) {
             std::wstring newName = di->item.pszText;
             if (newName.empty() || newName == live_.entries[idx].name) return FALSE;
             std::wstring oldPath = joinPath(live_.path, live_.entries[idx].name);
-            if (FileOperations::renameItem(parentWnd_, oldPath, newName)) {
+            Undo::Record record{Undo::Kind::Rename, {}};
+            const bool renamed = FileOperations::renameItem(parentWnd_, oldPath, newName, &record);
+            if (onUndoable) onUndoable(std::move(record));
+            if (renamed) {
                 refresh();
                 return TRUE;
             }

@@ -13,7 +13,7 @@ inline bool editOwnsKey(unsigned vk, bool ctrl, bool shift, bool alt) {
     if (!ctrl || shift || alt) {
         return false;
     }
-    return vk == 'C' || vk == 'X' || vk == 'V' || vk == 'A';
+    return vk == 'C' || vk == 'X' || vk == 'V' || vk == 'A' || vk == 'Z';
 }
 
 }  // namespace EditKeys

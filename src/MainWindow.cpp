@@ -409,6 +409,9 @@ void MainWindow::onCreate() {
     };
     right_.onFocusChanged = left_.onFocusChanged;
 
+    left_.onUndoable = [this](Undo::Record record) { recordUndoable(std::move(record)); };
+    right_.onUndoable = left_.onUndoable;
+
     auto onSearchVisibility = [this] { layoutChildren(); };
     left_.onSearchVisibilityChanged = onSearchVisibility;
     right_.onSearchVisibilityChanged = onSearchVisibility;
@@ -481,6 +484,9 @@ void MainWindow::createMenuBar() {
     AppendMenuW(fileMenu, MF_STRING, IDM_FILE_EXIT, L"終了(&X)");
 
     HMENU editMenu = CreatePopupMenu();
+    editMenu_ = editMenu;
+    AppendMenuW(editMenu, MF_STRING | MF_GRAYED, IDM_EDIT_UNDO, L"元に戻す(&U)\tCtrl+Z");
+    AppendMenuW(editMenu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(editMenu, MF_STRING, IDM_EDIT_COPY, L"コピー(&C)\tCtrl+C");
     AppendMenuW(editMenu, MF_STRING, IDM_EDIT_CUT, L"切り取り(&T)\tCtrl+X");
     AppendMenuW(editMenu, MF_STRING, IDM_EDIT_PASTE, L"貼り付け(&P)\tCtrl+V");
@@ -741,15 +747,19 @@ void MainWindow::updateStatusBar() {
 void MainWindow::doCopyToOther() {
     auto paths = activePane().selectedPaths();
     if (paths.empty()) return;
-    if (FileOperations::copyItems(hwnd_, paths, inactivePane().currentPath())) {
-        inactivePane().refresh();
-    }
+    Undo::Record record{Undo::Kind::Copy, {}};
+    const bool ok = FileOperations::copyItems(hwnd_, paths, inactivePane().currentPath(), &record);
+    recordUndoable(std::move(record));
+    if (ok) inactivePane().refresh();
 }
 
 void MainWindow::doMoveToOther() {
     auto paths = activePane().selectedPaths();
     if (paths.empty()) return;
-    if (FileOperations::moveItems(hwnd_, paths, inactivePane().currentPath())) {
+    Undo::Record record{Undo::Kind::Move, {}};
+    const bool ok = FileOperations::moveItems(hwnd_, paths, inactivePane().currentPath(), &record);
+    recordUndoable(std::move(record));
+    if (ok) {
         inactivePane().refresh();
         activePane().refresh();
     }
@@ -769,8 +779,10 @@ void MainWindow::doClipboardCopy(bool cut) {
 void MainWindow::doClipboardPaste() {
     auto cf = ClipboardFiles::get(hwnd_);
     if (!cf) return;
-    const bool ok = cf->move ? FileOperations::moveItems(hwnd_, cf->paths, activePane().currentPath())
-                              : FileOperations::copyItems(hwnd_, cf->paths, activePane().currentPath());
+    Undo::Record record{cf->move ? Undo::Kind::Move : Undo::Kind::Copy, {}};
+    const bool ok = cf->move ? FileOperations::moveItems(hwnd_, cf->paths, activePane().currentPath(), &record)
+                              : FileOperations::copyItems(hwnd_, cf->paths, activePane().currentPath(), &record);
+    recordUndoable(std::move(record));
     if (ok) {
         if (cf->move) {
             left_.clearCutPaths();
@@ -792,6 +804,32 @@ void MainWindow::doClipboardPaste() {
         }
         activePane().refresh();
     }
+}
+
+void MainWindow::recordUndoable(Undo::Record record) {
+    undo_.push(std::move(record));
+    updateUndoMenu();
+}
+
+void MainWindow::undoLast() {
+    auto record = undo_.pop();
+    updateUndoMenu();
+    if (!record) return;
+    if (!FileOperations::undo(hwnd_, Undo::plan(*record))) {
+        Dialogs::showError(hwnd_, L"Kestrel",
+                           (L"「" + Undo::describe(record->kind) + L"」を元に戻せなかった項目があります。\n"
+                            L"その後に移動・変更・削除された可能性があります。").c_str());
+    }
+    left_.refresh();
+    right_.refresh();
+}
+
+void MainWindow::updateUndoMenu() {
+    const Undo::Record* top = undo_.top();
+    const std::wstring label =
+        top ? L"元に戻す: " + Undo::describe(top->kind) + L"(&U)\tCtrl+Z" : std::wstring(L"元に戻す(&U)\tCtrl+Z");
+    ModifyMenuW(editMenu_, IDM_EDIT_UNDO, MF_BYCOMMAND | MF_STRING | (top ? MF_ENABLED : MF_GRAYED), IDM_EDIT_UNDO,
+                label.c_str());
 }
 
 void MainWindow::onAddressBarEnter() {
@@ -1000,6 +1038,9 @@ void MainWindow::onCommand(int id, HWND ctrl) {
             break;
         case IDM_EDIT_PASTE:
             if (!forwardToAddressBar(focus, WM_PASTE, 0, 0)) doClipboardPaste();
+            break;
+        case IDM_EDIT_UNDO:
+            if (!forwardToAddressBar(focus, WM_UNDO, 0, 0)) undoLast();
             break;
         case IDM_EDIT_SELECTALL:
             if (!forwardToAddressBar(focus, EM_SETSEL, 0, -1))

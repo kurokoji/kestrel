@@ -6,6 +6,7 @@
 #include "Session.h"
 #include "SplitterController.h"
 #include "TreePane.h"
+#include "Undo.h"
 #include "WindowLayout.h"
 
 #include <windows.h>
@@ -65,6 +66,11 @@ private:
     void doClipboardCopy(bool cut);
     void doClipboardPaste();
 
+    // Edit > 元に戻す: history of our own file operations (see Undo.h).
+    void recordUndoable(Undo::Record record);
+    void undoLast();
+    void updateUndoMenu();
+
     void onLButtonDown(int x, int y);
     void onMouseMove(int x, int y);
     void onLButtonUp(int x, int y);
@@ -99,6 +105,8 @@ private:
     bool sortAscending_ = true;
 
     HMENU viewMenu_ = nullptr;
+    HMENU editMenu_ = nullptr;
+    Undo::Stack undo_{50};
     bool showHidden_ = true;  // mirrors FilePane::setShowHidden for the menu check and the session
 
     TreePane tree_;

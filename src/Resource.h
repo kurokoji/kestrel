@@ -17,6 +17,7 @@
 #define IDM_EDIT_PASTE             1103
 #define IDM_EDIT_SELECTALL         1104
 #define IDM_EDIT_FIND              1105
+#define IDM_EDIT_UNDO              1106
 
 #define IDM_VIEW_REFRESH           1201
 #define IDM_VIEW_TREE              1202

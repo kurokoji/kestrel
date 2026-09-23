@@ -4,6 +4,7 @@
 #include "DirectoryWatcher.h"
 #include "FileDropTarget.h"
 #include "Types.h"
+#include "Undo.h"
 
 #include <windows.h>
 #include <array>
@@ -178,6 +179,10 @@ public:
     bool isSearchVisible() const { return searchVisible_; }
     void onSearchTextChanged();  // MainWindow calls this on EN_CHANGE from searchBox_
     void jumpToNextMatch();  // MainWindow calls this on Enter in searchBox_; cycles forward, wrapping around
+
+    // A file operation this pane performed (rename, new folder, delete to
+    // the Recycle Bin) that Edit > 元に戻す can reverse.
+    std::function<void(Undo::Record)> onUndoable;
 
     std::function<void(FilePane&)> onNavigated;
     std::function<void(FilePane&)> onSelectionChanged;

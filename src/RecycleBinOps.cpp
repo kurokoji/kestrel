@@ -41,7 +41,8 @@ ComPtr<IShellFolder2> bindRecycleBin() {
 // the shell enumerates first - an accepted limitation, same trade-off
 // DirectoryModel::run already takes enumerating this folder in the first
 // place.
-std::vector<OwnedChildPidl> resolvePidls(IShellFolder2* folder, const std::vector<std::wstring>& names) {
+std::vector<OwnedChildPidl> resolvePidls(IShellFolder2* folder, const std::vector<std::wstring>& names,
+                                         SHGDNF nameForm = SHGDN_INFOLDER) {
     std::vector<OwnedChildPidl> result;
     ComPtr<IEnumIDList> enumIds;
     if (FAILED(folder->EnumObjects(nullptr, SHCONTF_FOLDERS | SHCONTF_NONFOLDERS | SHCONTF_INCLUDEHIDDEN,
@@ -56,11 +57,14 @@ std::vector<OwnedChildPidl> resolvePidls(IShellFolder2* folder, const std::vecto
 
         STRRET strret{};
         wchar_t nameBuf[MAX_PATH] = L"";
-        if (SUCCEEDED(folder->GetDisplayNameOf(child.get(), SHGDN_INFOLDER, &strret))) {
+        if (SUCCEEDED(folder->GetDisplayNameOf(child.get(), nameForm, &strret))) {
             StrRetToBufW(&strret, child.get(), nameBuf, MAX_PATH);
         }
 
-        if (auto it = std::ranges::find(remaining, std::wstring(nameBuf)); it != remaining.end()) {
+        const auto it = std::ranges::find_if(remaining, [&](const std::wstring& n) {
+            return nameForm == SHGDN_INFOLDER ? n == nameBuf : _wcsicmp(n.c_str(), nameBuf) == 0;
+        });
+        if (it != remaining.end()) {
             remaining.erase(it);
             result.push_back(std::move(child));
         }
@@ -145,6 +149,13 @@ bool deleteItemsPermanently(HWND owner, const std::vector<std::wstring>& names) 
     ComPtr<IShellFolder2> folder = bindRecycleBin();
     if (!folder) return false;
     return invokeVerb(owner, folder.get(), resolvePidls(folder.get(), names), L"delete");
+}
+
+bool restoreItems(HWND owner, const std::vector<std::wstring>& recycledFiles) {
+    ComPtr<IShellFolder2> folder = bindRecycleBin();
+    if (!folder) return false;
+    // An entry's for-parsing name is the path of its $R storage file.
+    return invokeVerb(owner, folder.get(), resolvePidls(folder.get(), recycledFiles, SHGDN_FORPARSING), L"undelete");
 }
 
 bool emptyRecycleBin(HWND owner) {

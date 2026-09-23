@@ -42,6 +42,12 @@ ComPtr<T> get(HWND owner, const std::vector<std::wstring>& names) {
 // only through a shown menu) is safe to rely on here.
 bool deleteItemsPermanently(HWND owner, const std::vector<std::wstring>& names);
 
+// Restores the entries whose storage files are `recycledFiles` (the
+// C:\$Recycle.Bin\<SID>\$R... paths IFileOperation reports for a delete)
+// to where they were deleted from, via the entries' own "undelete" verb
+// (the 元に戻す command). Used by Edit > 元に戻す. False if none matched.
+bool restoreItems(HWND owner, const std::vector<std::wstring>& recycledFiles);
+
 // Empties the whole Recycle Bin. The shell shows its own confirmation
 // dialog (no SHERB_NOCONFIRMATION passed).
 bool emptyRecycleBin(HWND owner);

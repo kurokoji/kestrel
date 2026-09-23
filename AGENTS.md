@@ -477,6 +477,21 @@ commit - don't let it drift out of sync with what the app actually does.
   (the shell tidies separators around its own items). Some handlers
   (ATOK) still insert at position 0 regardless; not ours to fix. Shift
   held adds `CMF_EXTENDEDVERBS`/`CMIC_MASK_SHIFT_DOWN`, for item menus too.
+- Undo (`Undo.h`, `FileOperations::undo`, Ctrl+Z) only covers operations
+  we ran through `FileOperations` with a record: an `IFileOperation
+  ProgressSink` (`ResultRecorder`) keeps what each *requested* item
+  became (Post*Item's `psiNewlyCreated`; nested files of a copied folder
+  are reported too and filtered out). Drag-and-drop and shell menu
+  commands run inside the shell and are deliberately not recorded - no
+  outcome comes back to us. For a recycle, `psiNewlyCreated` is the raw
+  `C:\$Recycle.Bin\<SID>\$R...` file, *not* a Recycle Bin namespace item:
+  binding a context menu to it gives an ordinary file menu without
+  元に戻す. `RecycleBinOps::restoreItems` instead enumerates the bin and
+  matches entries by `SHGDN_FORPARSING` (which is that `$R` path), then
+  invokes their "undelete" verb - confirmed live as the verb behind 元に戻す.
+  Undoing a copy/new folder recycles rather than permanently deletes.
+  Verified live in a temp folder: rename, new folder, delete->restore,
+  F5 copy, F6 move, each undone.
 - The shell leaves 名前の変更 out of an item context menu that has no
   Explorer view (`IShellView`) behind it - it isn't just hidden, invoking
   a "rename" verb would do nothing either. `ShellContextMenu::show` takes
