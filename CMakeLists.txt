@@ -84,6 +84,7 @@ if(KESTREL_BUILD_TESTS)
         src/SessionFormat.cpp
         tests/TabCycleTests.cpp
         src/TabCycle.cpp
+        tests/EditKeysTests.cpp
         tests/DriveBadgeTests.cpp
         src/DriveBadge.cpp
     )

@@ -110,6 +110,13 @@ commit - don't let it drift out of sync with what the app actually does.
   Escape** if you don't swallow it - intercepting `WM_KEYDOWN` alone isn't
   enough, because `TranslateMessage` still turns it into a `WM_CHAR` your
   subclass has to also eat. See `SearchBoxSubclassProc`.
+- **The accelerator table's Ctrl+C/X/V (file copy/cut/paste) is
+  translated in App's message loop before any focused `EDIT` sees the
+  key**, so selected text in the rename label edit/address bar/search box
+  couldn't be copied. App's loop now skips `TranslateAcceleratorW` when
+  the focus window's class is `Edit` and `EditKeys::editOwnsKey` claims
+  the chord. Add any new accelerator that collides with standard edit
+  keys there too.
 - **`ListView_EnsureVisible` is a no-op if the target row is already
   inside the current visible range** - it doesn't scroll to make a row
   the *top* row, only to make it *visible somewhere*. Restoring a tab's

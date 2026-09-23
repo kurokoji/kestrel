@@ -1,4 +1,5 @@
 #include "App.h"
+#include "EditKeys.h"
 #include "MainWindow.h"
 
 #include <commctrl.h>
@@ -6,6 +7,15 @@
 #include <objidl.h>
 #include <ole2.h>
 #include <gdiplus.h>
+
+namespace {
+
+bool isEditControl(HWND hwnd) {
+    wchar_t cls[16]{};
+    return GetClassNameW(hwnd, cls, 16) > 0 && lstrcmpiW(cls, L"Edit") == 0;
+}
+
+}  // namespace
 
 int App::run(HINSTANCE hInstance, int nCmdShow) {
     // OleInitialize (not plain CoInitializeEx) is required on this thread
@@ -43,7 +53,15 @@ int App::run(HINSTANCE hInstance, int nCmdShow) {
             continue;
         }
 
-        if (!TranslateAcceleratorW(hwndMain, hAccel, &msg)) {
+        // Let a focused edit (rename, address bar, search) handle its own
+        // clipboard shortcuts instead of the file copy/cut/paste accelerators.
+        const bool editOwns = msg.message == WM_KEYDOWN && isEditControl(msg.hwnd) &&
+                              EditKeys::editOwnsKey(static_cast<unsigned>(msg.wParam),
+                                                    (GetKeyState(VK_CONTROL) & 0x8000) != 0,
+                                                    (GetKeyState(VK_SHIFT) & 0x8000) != 0,
+                                                    (GetKeyState(VK_MENU) & 0x8000) != 0);
+
+        if (editOwns || !TranslateAcceleratorW(hwndMain, hAccel, &msg)) {
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
