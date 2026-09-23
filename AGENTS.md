@@ -542,7 +542,7 @@ commit - don't let it drift out of sync with what the app actually does.
   actually unique past 8 drives, since the goal is "tell C/D/E/F apart at
   a glance," not a guaranteed-unique color per drive. `drawTabItem` needs
   the tab's *path*, not just its label text (which is already just the
-  folder name via `tabLabelFor`) - for the active tab that's the live
+  folder name via `NameParts::tabLabel`) - for the active tab that's the live
   `live_.path`, for any other tab it's `tabs_[idx].content.path` (only synced
   on tab switch, so reading it directly here rather than caching
   separately is deliberate - it's always correct for non-active tabs).

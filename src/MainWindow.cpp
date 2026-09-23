@@ -507,6 +507,7 @@ void MainWindow::createMenuBar() {
     AppendMenuW(goMenu, MF_STRING, IDM_GO_UP, L"上へ(&U)\tAlt+Up");
     AppendMenuW(goMenu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(goMenu, MF_STRING, IDM_TAB_NEW, L"新しいタブ(&N)\tCtrl+T");
+    AppendMenuW(goMenu, MF_STRING, IDM_TAB_DUPLICATE, L"タブを複製(&D)");
     AppendMenuW(goMenu, MF_STRING, IDM_TAB_CLOSE, L"タブを閉じる(&C)\tCtrl+W");
     AppendMenuW(goMenu, MF_STRING, IDM_TAB_NEXT, L"次のタブ(&X)\tCtrl+Tab");
     AppendMenuW(goMenu, MF_STRING, IDM_TAB_PREV, L"前のタブ(&P)\tCtrl+Shift+Tab");
@@ -659,6 +660,7 @@ void MainWindow::layoutChildren() {
         ShowWindow(p.hwnd(), cmd);
         ShowWindow(p.tabHwnd(), cmd);
         ShowWindow(p.newTabButtonHwnd(), cmd);
+        ShowWindow(p.duplicateTabButtonHwnd(), cmd);
         // Re-shown (if applicable) by the setBounds() call right below,
         // which only shows it when that pane's currentPath() is actually
         // the Recycle Bin - hiding it outright here just makes sure it
@@ -1001,6 +1003,13 @@ void MainWindow::onCommand(int id, HWND ctrl) {
         left_.newTab();
         return;
     }
+    for (FilePane* pane : {&left_, &right_}) {
+        if (ctrl && ctrl == pane->duplicateTabButtonHwnd()) {
+            pane->activate();
+            pane->duplicateTab();
+            return;
+        }
+    }
     if (ctrl && ctrl == right_.newTabButtonHwnd()) {
         right_.activate();
         right_.newTab();
@@ -1105,6 +1114,9 @@ void MainWindow::onCommand(int id, HWND ctrl) {
 
         case IDM_TAB_NEW:
             activePane().newTab();
+            break;
+        case IDM_TAB_DUPLICATE:
+            activePane().duplicateTab();
             break;
         case IDM_TAB_CLOSE:
             activePane().closeTab();

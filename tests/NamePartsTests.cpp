@@ -1,6 +1,7 @@
 #include "doctest.h"
 
 #include "NameParts.h"
+#include "Types.h"
 
 #include <string>
 #include <vector>
@@ -29,4 +30,15 @@ TEST_CASE("fallbackTypeName mimics Explorer's text for unregistered types") {
     CHECK(NameParts::fallbackTypeName(L".abc", false) == L"ABC ファイル");
     CHECK(NameParts::fallbackTypeName(L"", false) == L"ファイル");
     CHECK(NameParts::fallbackTypeName(L"", true) == L"ファイル フォルダー");
+}
+
+TEST_CASE("tabLabel shows a folder's own name") {
+    CHECK(NameParts::tabLabel(L"C:\\Users\\me") == L"me");
+    CHECK(NameParts::tabLabel(L"D:\\") == L"D:\\");  // a drive root has no name of its own
+    CHECK(NameParts::tabLabel(L"") == L"");
+}
+
+TEST_CASE("tabLabel names the virtual locations instead of showing their CLSID") {
+    CHECK(NameParts::tabLabel(kThisPcPath) == L"PC");
+    CHECK(NameParts::tabLabel(kRecycleBinPath) == L"ゴミ箱");
 }

@@ -1,6 +1,7 @@
 #include "FilePane.h"
 #include "DriveBadge.h"
 #include "DropTargetPath.h"
+#include "NameParts.h"
 #include "TabCycle.h"
 
 #include <windowsx.h>
@@ -25,13 +26,6 @@
 // item" exists to fight with any more).
 
 namespace {
-
-std::wstring tabLabelFor(const std::wstring& path) {
-    if (path.empty()) return L"";
-    const size_t slash = path.find_last_of(L'\\');
-    std::wstring name = (slash == std::wstring::npos) ? path : path.substr(slash + 1);
-    return name.empty() ? path : name;  // e.g. "C:\" has nothing after its trailing slash
-}
 
 constexpr int kTabStripHeight = 22;
 constexpr int kTabWidth = 120;  // room for a readable label plus the close glyph
@@ -546,7 +540,7 @@ void FilePane::newTab() {
     syncActiveTabIntoStorage();
 
     TabState t;
-    t.content.path = live_.path;  // new tab starts out at the same folder
+    t.content.path = kThisPcPath;  // a fresh tab starts at the drive list; duplicateTab() copies the current one
     t.content.sortColumn = defaultSortColumn_;
     t.content.sortAscending = defaultSortAscending_;
     tabs_.push_back(std::move(t));
@@ -554,6 +548,18 @@ void FilePane::newTab() {
 
     relayoutTabs();
     loadTabIntoLive(newIndex);  // starts empty, so this also kicks off the enumeration
+    InvalidateRect(tabHwnd_, nullptr, TRUE);
+    if (onTabCountChanged) onTabCountChanged();
+}
+
+void FilePane::duplicateTab() {
+    syncActiveTabIntoStorage();
+    TabState copy = tabs_[activeTab_];
+    const int newIndex = activeTab_ + 1;
+    tabs_.insert(tabs_.begin() + newIndex, std::move(copy));
+    hoveredCloseTab_ = -1;  // indices after the insertion point just shifted
+    relayoutTabs();
+    loadTabIntoLive(newIndex);  // shows the copied listing at once, then re-enumerates it
     InvalidateRect(tabHwnd_, nullptr, TRUE);
     if (onTabCountChanged) onTabCountChanged();
 }
@@ -638,7 +644,7 @@ void FilePane::drawTabItem(HDC hdc, const RECT& r, int index) {
     const std::wstring& tabPath = (index == activeTab_) ? live_.path
                                    : (index >= 0 && static_cast<size_t>(index) < tabs_.size()) ? tabs_[index].content.path
                                                                                                 : std::wstring{};
-    const std::wstring label = tabLabelFor(tabPath);
+    const std::wstring label = NameParts::tabLabel(tabPath);
 
     HFONT font = tabFont_ ? tabFont_ : static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
     HFONT old = static_cast<HFONT>(SelectObject(hdc, font));

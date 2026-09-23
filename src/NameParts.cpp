@@ -1,4 +1,5 @@
 #include "NameParts.h"
+#include "Types.h"
 
 #include <algorithm>
 #include <cwctype>
@@ -34,6 +35,14 @@ std::wstring fallbackTypeName(const std::wstring& extension, bool isDirectory) {
     std::wstring upper = extension.substr(1);  // without the leading dot
     std::ranges::transform(upper, upper.begin(), ::towupper);
     return upper + L" ファイル";
+}
+
+std::wstring tabLabel(const std::wstring& path) {
+    if (path == kThisPcPath) return L"PC";
+    if (path == kRecycleBinPath) return L"ゴミ箱";
+    const size_t slash = path.find_last_of(L'\\');
+    std::wstring name = (slash == std::wstring::npos) ? path : path.substr(slash + 1);
+    return name.empty() ? path : name;  // e.g. "C:\" has nothing after its trailing slash
 }
 
 }  // namespace NameParts

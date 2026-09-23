@@ -20,4 +20,8 @@ std::wstring uniqueName(const std::vector<std::wstring>& existingNames, const st
 // ファイル" for ".abc", as Explorer shows it.
 std::wstring fallbackTypeName(const std::wstring& extension, bool isDirectory);
 
+// A tab's label: the folder's own name, a drive root as-is ("D:\"), and
+// "PC" / "ゴミ箱" for the virtual This PC / Recycle Bin locations.
+std::wstring tabLabel(const std::wstring& path);
+
 }  // namespace NameParts

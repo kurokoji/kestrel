@@ -42,6 +42,7 @@ public:
     HWND hwnd() const { return hwnd_; }
     HWND tabHwnd() const { return tabHwnd_; }
     HWND newTabButtonHwnd() const { return newTabButton_; }
+    HWND duplicateTabButtonHwnd() const { return duplicateTabButton_; }
     HWND searchBoxHwnd() const { return searchBox_; }
     HWND emptyRecycleBinButtonHwnd() const { return emptyRecycleBinButton_; }
     int paneId() const { return paneId_; }
@@ -74,7 +75,10 @@ public:
     bool canGoBack() const { return !live_.back.empty(); }
     bool canGoForward() const { return !live_.forward.empty(); }
 
-    void newTab();
+    void newTab();  // opens at This PC (kThisPcPath), like a fresh Explorer window
+    // Copies the active tab (folder, cached listing, history, sort,
+    // selection, scroll) into a new tab right after it and switches to it.
+    void duplicateTab();
     // Middle-click on a folder: a new tab right after the active one,
     // left in the background (it loads when first shown).
     void openInBackgroundTab(const std::wstring& path);
@@ -308,6 +312,7 @@ private:
     HBITMAP dragGhostBitmap_ = nullptr;  // snapshot of the tab at drag start; owned, freed in endTabDrag
     POINT dragGhostOffset_{};  // grab point relative to the tab's own top-left, so the ghost doesn't jump under the cursor
     HWND newTabButton_ = nullptr;
+    HWND duplicateTabButton_ = nullptr;  // right of newTabButton_; an icon-font glyph, not text
     HWND searchBox_ = nullptr;
     // Shown only while currentPath() == kRecycleBinPath - see setBounds().
     HWND emptyRecycleBinButton_ = nullptr;

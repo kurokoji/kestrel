@@ -101,6 +101,29 @@ bool FilePane::create(HWND parent, HINSTANCE hInstance, int controlId, int paneI
                                      nullptr, hInstance, nullptr);
     SendMessageW(newTabButton_, WM_SETFONT, reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)), TRUE);
 
+    // "Copy" glyph (U+E8C8) from the system icon font, shared by both panes.
+    static HFONT iconFont = CreateFontW(-MulDiv(10, static_cast<int>(GetDpiForWindow(parent)), 72), 0, 0, 0,
+                                        FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                                        CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe MDL2 Assets");
+    duplicateTabButton_ = CreateWindowExW(0, L"BUTTON", L"\xE8C8", WS_CHILD | WS_CLIPSIBLINGS | WS_VISIBLE | BS_PUSHBUTTON,
+                                          0, 0, 0, 0, parent, nullptr, hInstance, nullptr);
+    SendMessageW(duplicateTabButton_, WM_SETFONT, reinterpret_cast<WPARAM>(iconFont), TRUE);
+
+    // Hover tooltips for the two tab buttons.
+    HWND tooltip = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr, WS_POPUP | TTS_ALWAYSTIP, CW_USEDEFAULT,
+                                   CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, parent, nullptr, hInstance, nullptr);
+    auto addTip = [&](HWND button, const wchar_t* text) {
+        TTTOOLINFOW info{};
+        info.cbSize = sizeof(info);
+        info.uFlags = TTF_IDISHWND | TTF_SUBCLASS;
+        info.hwnd = parent;
+        info.uId = reinterpret_cast<UINT_PTR>(button);
+        info.lpszText = const_cast<LPWSTR>(text);
+        SendMessageW(tooltip, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&info));
+    };
+    addTip(newTabButton_, L"新しいタブ (Ctrl+T)");
+    addTip(duplicateTabButton_, L"タブを複製");
+
     // Hidden until Ctrl+F; setBounds() only reserves a row for it while
     // searchVisible_ is true.
     searchBox_ = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"", WS_CHILD | WS_CLIPSIBLINGS | ES_AUTOHSCROLL, 0, 0, 0, 0, parent,
@@ -177,7 +200,7 @@ void FilePane::setBounds(const RECT& outer) {
     constexpr int kSearchBoxHeight = 22;
     constexpr int kEmptyRecycleBinButtonHeight = 24;
     const int w = outer.right - outer.left;
-    const int tabStripW = std::max(0, w - kNewTabButtonWidth);
+    const int tabStripW = std::max(0, w - kNewTabButtonWidth * 2);  // "+" and the duplicate button
 
     tabStripWidth_ = tabStripW;
     relayoutTabs();  // wraps tabRects_ onto however many rows this width needs
@@ -185,6 +208,8 @@ void FilePane::setBounds(const RECT& outer) {
     const int tabStripHeight = tabRows * kTabStripHeight;
     placeWithoutRedraw(tabHwnd_, outer.left, outer.top, tabStripW, tabStripHeight);
     placeWithoutRedraw(newTabButton_, outer.left + tabStripW, outer.top, kNewTabButtonWidth, kTabStripHeight);
+    placeWithoutRedraw(duplicateTabButton_, outer.left + tabStripW + kNewTabButtonWidth, outer.top, kNewTabButtonWidth,
+                       kTabStripHeight);
 
     int listTop = outer.top + tabStripHeight;
 
