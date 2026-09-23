@@ -21,6 +21,12 @@ commit - don't let it drift out of sync with what the app actually does.
 
 - Commit each completed unit of work after verification; the user wants
   commits as work is completed, not accumulated for a later request.
+- After every change, also run `build.bat` so `build\kestrel.exe` (the
+  exe the user actually launches) is current - the user asked for this
+  after testing a stale exe and finding a committed feature "missing".
+  Verifying in a separate build directory doesn't update it. If the
+  user's instance is running, the link fails with `LNK1104`: tell them
+  to close it rather than killing it.
 
 - New logic changes follow Red-Green-Refactor: write a failing test in
   `tests/` first, confirm it fails, write the minimum code to pass, then
