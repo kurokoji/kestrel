@@ -118,13 +118,14 @@ public:
     // Pane-local file operations - these never need to know about the
     // other pane, unlike copy/move which MainWindow drives directly.
     void doRename();
-    void doDelete();
+    void doDelete(bool permanent = false);  // permanent = Shift+Delete (skip the Recycle Bin)
     // Recycle Bin view only - empties it entirely (the shell shows its own
     // confirmation). A no-op elsewhere. Restoring items is right-click only
     // (MainWindow::onContextMenu) - it goes through the Recycle Bin's real
     // shell menu rather than a verb we'd have to guess/match ourselves.
     void emptyRecycleBin();
-    void doMkdir();
+    void doMkdir();  // creates "新しいフォルダー" and starts renaming it in place
+    void showProperties();  // Alt+Enter: selection, or the shown folder when nothing is selected
     void doView();
     void doEdit();
     void openFocusedOrSelected();  // same as double-click: navigate into a folder, or open a file
@@ -226,6 +227,10 @@ private:
     FileDropTarget::Hit dropHitTest(POINT pt) const;
     void setDropHighlight(int index);
 
+    // Starts the in-place rename doMkdir() queued, once a refresh lists
+    // the new folder (called from handleDirResult).
+    void beginPendingRename();
+
     // Tab state, layout, drawing and mouse handling are implemented in
     // FilePaneTabs.cpp.
     static LRESULT CALLBACK TabStripSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam,
@@ -283,6 +288,8 @@ private:
     bool searchVisible_ = false;
     std::wstring searchQuery_;  // lowercased; empty = no active search
     int currentMatchIndex_ = -1;  // custom-drawn blue (not just the yellow match color) regardless of list focus
+    std::wstring pendingRenameDir_;   // folder doMkdir() created pendingRenameName_ in
+    std::wstring pendingRenameName_;  // empty = no rename waiting for the next listing
     int dropHighlightIndex_ = -1;  // folder row under an incoming drag; custom-drawn like currentMatchIndex_
     HWND parentWnd_ = nullptr;
     int paneId_ = 0;

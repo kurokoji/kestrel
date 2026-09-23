@@ -15,4 +15,9 @@ void sort(std::vector<FileEntry>& entries, int sortColumn, bool ascending);
 // pre-lowered so this doesn't redo that work per entry per keystroke).
 bool matchesSearch(const FileEntry& entry, const std::wstring& lowercaseQuery);
 
+// Index of the first entry at or after `start` whose name starts with
+// `prefix` (case-insensitive), or -1. With `wrap`, continues from the top
+// after the last entry. Backs the list's type-to-select (LVN_ODFINDITEM).
+int findByPrefix(const std::vector<FileEntry>& entries, const std::wstring& prefix, int start, bool wrap);
+
 }  // namespace FileEntrySort

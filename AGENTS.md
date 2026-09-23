@@ -313,6 +313,27 @@ commit - don't let it drift out of sync with what the app actually does.
   hover/leave handler that reuses the same hit-test rect the click
   handler already uses (so their behavior can't drift apart) is validated
   well enough by code review plus a build.
+- Keyboard input via `keybd_event` only reaches the app if it's really
+  foreground, and plain `SetForegroundWindow` from the test process is
+  usually refused. Tapping Alt (`keybd_event(VK_MENU)`) right before
+  `SetForegroundWindow` got it granted; check `GetForegroundWindow()`
+  before sending keys - otherwise they land in whatever the user has
+  focused. `GetKeyState`-dependent paths (Shift+Delete, Shift+right-click)
+  need this; `PostMessage`d key messages don't update key state.
+- A tracked popup menu (`#32768`) can be read cross-process: `MN_GETHMENU`
+  returns its `HMENU`, and `GetMenuItemCount`/`GetMenuString` work on it.
+  `WM_CANCELMODE` to the main window did *not* close it; posting
+  `WM_KEYDOWN VK_ESCAPE` to the `#32768` window did. Don't screen-capture
+  to see a menu: `CopyFromScreen` grabs the user's whole desktop.
+- `.ps1` files written without a BOM are read as ANSI by Windows
+  PowerShell 5, so Japanese literals in them (window titles to match)
+  silently turn into mojibake - enumerate windows and filter by class
+  instead of matching a Japanese title.
+- Stop the app with `WM_CLOSE`, not `Stop-Process`, when the session file
+  matters: a killed process doesn't save, so the next launch restores
+  whatever was saved before (possibly the user's real folders, not your
+  test folder). Back up `%APPDATA%\Kestrel\session.ini` before testing
+  and copy it back afterward.
 - If a real, previously-saved session gets restored during testing (this
   app persists open folders across runs - see Session.h), you may end up
   looking at the user's actual files/directory listings, not test data.
@@ -427,6 +448,29 @@ commit - don't let it drift out of sync with what the app actually does.
   destroyed after it. Verified live with a real `mouse_event` drag in a
   temp folder: pane-to-pane onto a folder row, onto empty list space,
   same-pane onto a folder row, and drop-back-onto-self (refused).
+- Empty-area right-click shows the folder's real background menu
+  (`ShellContextMenu::showBackground`, `BHID_SFViewObject` =
+  `IShellFolder::CreateViewObject`). It has no Paste/Refresh (Explorer's
+  view adds those, not the folder), so ours are prepended - *after*
+  `QueryContextMenu`, not before: added first, our separator vanished
+  (the shell tidies separators around its own items). Some handlers
+  (ATOK) still insert at position 0 regardless; not ours to fix. Shift
+  held adds `CMF_EXTENDEDVERBS`/`CMIC_MASK_SHIFT_DOWN`, for item menus too.
+- **A ListView keeps selected/focused row *indices* across
+  `ListView_SetItemCountEx`**, even in `LVS_OWNERDATA`. Navigating to a
+  different folder therefore opened with the old folder's row numbers
+  still selected, and switching tabs merged the outgoing tab's selection
+  into the restored one; the status bar hid it by zeroing its count in
+  `applyEntries`. `handleDirResult` now clears selection only when the
+  path changes (a same-folder watcher refresh keeps it),
+  `loadTabIntoLive` clears before restoring, and `applyEntries`
+  recounts from the control instead of zeroing.
+- Type-to-select needs `LVN_ODFINDITEMW` (owner-data lists can't search
+  themselves) - `FileEntrySort::findByPrefix`. The F2 extension-less
+  preselect is a *posted* `EM_SETSEL` from `LVN_BEGINLABELEDITW`: the
+  control selects all after that notification returns. F7 creates
+  `NameParts::uniqueName` right away and `beginPendingRename` starts the
+  label edit once `handleDirResult` lists it (enumeration is async).
 - The custom UI font (Tools > Options, `MainWindow::chooseFont`/
   `applyFont`) is deliberately scoped to the tree/lists/tabs/address
   bar/status bar only - not the toolbar (icon-only, no visible text worth

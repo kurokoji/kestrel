@@ -1,6 +1,7 @@
 #include "FileEntrySort.h"
 
 #include <algorithm>
+#include <cwctype>
 
 namespace FileEntrySort {
 
@@ -31,6 +32,21 @@ void sort(std::vector<FileEntry>& entries, int sortColumn, bool ascending) {
 bool matchesSearch(const FileEntry& entry, const std::wstring& lowercaseQuery) {
     if (lowercaseQuery.empty()) return false;
     return entry.lowercaseName.find(lowercaseQuery) != std::wstring::npos;
+}
+
+int findByPrefix(const std::vector<FileEntry>& entries, const std::wstring& prefix, int start, bool wrap) {
+    const int count = static_cast<int>(entries.size());
+    if (count == 0) return -1;
+    std::wstring lowered = prefix;
+    std::ranges::transform(lowered, lowered.begin(), ::towlower);
+    if (start < 0 || start >= count) start = 0;
+
+    const int steps = wrap ? count : count - start;
+    for (int step = 0; step < steps; ++step) {
+        const int i = (start + step) % count;
+        if (entries[i].lowercaseName.starts_with(lowered)) return i;
+    }
+    return -1;
 }
 
 }  // namespace FileEntrySort

@@ -10,6 +10,7 @@
 #define IDM_FILE_MKDIR             1006
 #define IDM_FILE_DELETE            1007
 #define IDM_FILE_RENAME            1008
+#define IDM_FILE_PROPERTIES        1010
 
 #define IDM_EDIT_COPY              1101
 #define IDM_EDIT_CUT               1102

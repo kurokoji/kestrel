@@ -463,6 +463,7 @@ void MainWindow::createMenuBar() {
     AppendMenuW(fileMenu, MF_STRING, IDM_FILE_MKDIR, L"新しいフォルダー(&F)\tF7");
     AppendMenuW(fileMenu, MF_STRING, IDM_FILE_DELETE, L"削除(&D)\tF8");
     AppendMenuW(fileMenu, MF_STRING, IDM_FILE_RENAME, L"名前の変更(&R)\tF2");
+    AppendMenuW(fileMenu, MF_STRING, IDM_FILE_PROPERTIES, L"プロパティ(&P)\tAlt+Enter");
     AppendMenuW(fileMenu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(fileMenu, MF_STRING, IDM_FILE_EXIT, L"終了(&X)");
 
@@ -470,7 +471,7 @@ void MainWindow::createMenuBar() {
     AppendMenuW(editMenu, MF_STRING, IDM_EDIT_COPY, L"コピー(&C)\tCtrl+C");
     AppendMenuW(editMenu, MF_STRING, IDM_EDIT_CUT, L"切り取り(&T)\tCtrl+X");
     AppendMenuW(editMenu, MF_STRING, IDM_EDIT_PASTE, L"貼り付け(&P)\tCtrl+V");
-    AppendMenuW(editMenu, MF_STRING, IDM_EDIT_SELECTALL, L"すべて選択(&A)");
+    AppendMenuW(editMenu, MF_STRING, IDM_EDIT_SELECTALL, L"すべて選択(&A)\tCtrl+A");
     AppendMenuW(editMenu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(editMenu, MF_STRING, IDM_EDIT_FIND, L"検索(&F)\tCtrl+F");
 
@@ -824,17 +825,17 @@ void MainWindow::onContextMenu(HWND target, int screenX, int screenY) {
         return;
     }
 
-    // Empty-area right-click: a real shell "background" context menu
-    // needs a different API (IShellFolder::CreateViewObject), so this
-    // covers just the handful of actions that make sense with nothing
-    // selected instead.
-    HMENU menu = CreatePopupMenu();
-    AppendMenuW(menu, MF_STRING, IDM_FILE_MKDIR, L"新しいフォルダー(&N)\tF7");
-    AppendMenuW(menu, MF_STRING, IDM_EDIT_PASTE, L"貼り付け(&P)\tCtrl+V");
-    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, IDM_VIEW_REFRESH, L"更新(&R)");
-    TrackPopupMenu(menu, TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RIGHTBUTTON, screenPt.x, screenPt.y, 0, hwnd_, nullptr);
-    DestroyMenu(menu);
+    // Empty-area right-click: the folder's real shell background menu
+    // (新規作成, プロパティ, ...). Explorer's own view adds 最新の情報に更新
+    // etc. on top of it; those come from its view, not the folder, so ours
+    // are prepended here instead.
+    const auto result = shellMenu_.showBackground(hwnd_, pane->currentPath(), screenPt, {
+        {IDM_VIEW_REFRESH, L"最新の情報に更新(&E)"},
+        {IDM_FILE_MKDIR, L"新しいフォルダー(&N)\tF7"},
+        {IDM_EDIT_PASTE, L"貼り付け(&P)\tCtrl+V"},
+    });
+    if (result.ownCommand) onCommand(static_cast<int>(result.ownCommand), nullptr);
+    else if (result.shellInvoked) pane->refresh();
 }
 
 bool MainWindow::forwardToAddressBar(HWND focus, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -891,6 +892,9 @@ void MainWindow::onCommand(int id, HWND ctrl) {
             break;
         case IDM_FILE_RENAME:
             activePane().doRename();
+            break;
+        case IDM_FILE_PROPERTIES:
+            activePane().showProperties();
             break;
 
         case IDM_EDIT_COPY:

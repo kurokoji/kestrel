@@ -95,3 +95,18 @@ TEST_CASE("matchesSearch reads the precomputed lowercaseName rather than re-deri
     CHECK(FileEntrySort::matchesSearch(e, L"mismatch"));
     CHECK_FALSE(FileEntrySort::matchesSearch(e, L"report"));
 }
+
+TEST_CASE("findByPrefix finds the first case-insensitive name prefix match from start") {
+    const std::vector<FileEntry> entries{makeEntry(L"Alpha"), makeEntry(L"beta"), makeEntry(L"Bravo"), makeEntry(L"charlie")};
+    CHECK(FileEntrySort::findByPrefix(entries, L"B", 0, false) == 1);
+    CHECK(FileEntrySort::findByPrefix(entries, L"br", 0, false) == 2);
+    CHECK(FileEntrySort::findByPrefix(entries, L"b", 2, false) == 2);  // start itself is a candidate
+    CHECK(FileEntrySort::findByPrefix(entries, L"z", 0, true) == -1);
+}
+
+TEST_CASE("findByPrefix wraps past the end only when asked to") {
+    const std::vector<FileEntry> entries{makeEntry(L"Alpha"), makeEntry(L"beta"), makeEntry(L"charlie")};
+    CHECK(FileEntrySort::findByPrefix(entries, L"a", 1, false) == -1);
+    CHECK(FileEntrySort::findByPrefix(entries, L"a", 1, true) == 0);
+    CHECK(FileEntrySort::findByPrefix(entries, L"a", 99, true) == 0);  // out-of-range start begins at the top
+}

@@ -18,8 +18,9 @@ bool copyItems(HWND owner, const std::vector<std::wstring>& sources, const std::
 // Moves `sources` into `destDir`.
 bool moveItems(HWND owner, const std::vector<std::wstring>& sources, const std::wstring& destDir);
 
-// Sends `sources` to the Recycle Bin (FOF_ALLOWUNDO).
-bool deleteItems(HWND owner, const std::vector<std::wstring>& sources);
+// Sends `sources` to the Recycle Bin (FOF_ALLOWUNDO), or with `permanent`
+// deletes them outright after the shell's own confirmation.
+bool deleteItems(HWND owner, const std::vector<std::wstring>& sources, bool permanent = false);
 
 // Renames a single item in place.
 bool renameItem(HWND owner, const std::wstring& path, const std::wstring& newName);

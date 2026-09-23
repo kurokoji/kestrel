@@ -6,8 +6,11 @@
 #include "FileEntrySort.h"
 #include "FileOperations.h"
 #include "IconCache.h"
+#include "NameParts.h"
+#include "ShellSelection.h"
 #include "RecycleBinOps.h"
 
+#include <shlobj.h>
 #include <windowsx.h>
 #include <objidl.h>  // must precede gdiplus.h - see AGENTS.md
 #include <gdiplus.h>
@@ -232,8 +235,15 @@ void FilePane::handleDirResult(std::unique_ptr<EnumerationResult> result) {
     }
 
     const bool wasRecycleBin = (live_.path == kRecycleBinPath);
+    // The ListView keeps selected/focused row *indices* across a new item
+    // count, so a different folder would open with the old folder's row
+    // numbers still selected. A same-folder refresh keeps them.
+    if (_wcsicmp(live_.path.c_str(), pendingNavPath_.c_str()) != 0) {
+        ListView_SetItemState(hwnd_, -1, 0, LVIS_SELECTED | LVIS_FOCUSED);
+    }
     live_.path = pendingNavPath_;
     applyEntries(std::move(result->entries));
+    beginPendingRename();
     // drawTabItem reads live_.path directly for the active tab's label,
     // so there's no separate tab-control item text to update here - just
     // repaint the strip so the new path actually shows.
@@ -256,15 +266,17 @@ void FilePane::applyEntries(std::vector<FileEntry> entries) {
         if (e.isDirectory()) ++live_.stats.dirCount;
         else ++live_.stats.fileCount;
     }
-    live_.stats.selectedCount = 0;
-    live_.stats.selectedSize = 0;
-
     // LVS_OWNERDATA only repaints automatically when the item COUNT
     // changes; if the new folder happens to have the same number of
     // entries as the old one, the control would otherwise keep showing
     // the previous folder's cached rows. Force a repaint unconditionally.
     ListView_SetItemCountEx(hwnd_, static_cast<int>(live_.entries.size()), LVSICF_NOSCROLL);
     InvalidateRect(hwnd_, nullptr, FALSE);
+
+    // The control keeps its selected rows across a same-folder refresh
+    // (e.g. a DirectoryWatcher reload), so count what it actually still
+    // has selected rather than assuming nothing is.
+    recomputeSelectionStats();
 }
 
 void FilePane::sortEntries() {
@@ -274,12 +286,11 @@ void FilePane::sortEntries() {
 void FilePane::recomputeSelectionStats() {
     size_t count = 0;
     uint64_t size = 0;
-    const int total = static_cast<int>(live_.entries.size());
-    for (int i = 0; i < total; ++i) {
-        if (ListView_GetItemState(hwnd_, i, LVIS_SELECTED) & LVIS_SELECTED) {
-            ++count;
-            if (!live_.entries[i].isDirectory()) size += live_.entries[i].size;
-        }
+    int i = -1;
+    while ((i = ListView_GetNextItem(hwnd_, i, LVNI_SELECTED)) != -1) {
+        if (static_cast<size_t>(i) >= live_.entries.size()) break;
+        ++count;
+        if (!live_.entries[i].isDirectory()) size += live_.entries[i].size;
     }
     live_.stats.selectedCount = count;
     live_.stats.selectedSize = size;
@@ -352,7 +363,7 @@ void FilePane::doRename() {
     ListView_EditLabel(hwnd_, idx);
 }
 
-void FilePane::doDelete() {
+void FilePane::doDelete(bool permanent) {
     if (live_.path == kRecycleBinPath) {
         auto names = selectedNames();
         if (!names.empty() && RecycleBinOps::deleteItemsPermanently(parentWnd_, names)) {
@@ -362,7 +373,7 @@ void FilePane::doDelete() {
     }
     auto paths = selectedPaths();
     if (paths.empty()) return;
-    if (FileOperations::deleteItems(parentWnd_, paths)) {
+    if (FileOperations::deleteItems(parentWnd_, paths, permanent)) {
         refresh();
     }
 }
@@ -375,11 +386,52 @@ void FilePane::emptyRecycleBin() {
 }
 
 void FilePane::doMkdir() {
-    auto name = Dialogs::promptForText(parentWnd_, L"新しいフォルダー", L"フォルダー名:", L"新しいフォルダー");
-    if (!name) return;
-    if (FileOperations::createDirectory(parentWnd_, live_.path, *name)) {
+    // This PC / Recycle Bin aren't folders anything can be created in.
+    if (live_.path.starts_with(L"::")) return;
+
+    // Explorer-style: create "新しいフォルダー" (numbered if taken) right
+    // away, then drop straight into renaming it once the refresh lists it.
+    std::vector<std::wstring> names;
+    names.reserve(live_.entries.size());
+    for (const auto& e : live_.entries) names.push_back(e.name);
+    std::wstring name = NameParts::uniqueName(names, L"新しいフォルダー");
+    if (FileOperations::createDirectory(parentWnd_, live_.path, name)) {
+        pendingRenameDir_ = live_.path;
+        pendingRenameName_ = std::move(name);
         refresh();
     }
+}
+
+void FilePane::beginPendingRename() {
+    if (pendingRenameName_.empty()) return;
+    if (_wcsicmp(pendingRenameDir_.c_str(), live_.path.c_str()) != 0) {
+        pendingRenameName_.clear();  // navigated elsewhere meanwhile
+        return;
+    }
+    const auto it = std::ranges::find_if(live_.entries, [&](const FileEntry& e) {
+        return _wcsicmp(e.name.c_str(), pendingRenameName_.c_str()) == 0;
+    });
+    if (it == live_.entries.end()) return;  // not listed yet; a later refresh will
+    pendingRenameName_.clear();
+
+    const int idx = static_cast<int>(it - live_.entries.begin());
+    ListView_SetItemState(hwnd_, -1, 0, LVIS_SELECTED);
+    ListView_SetItemState(hwnd_, idx, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
+    ListView_EnsureVisible(hwnd_, idx, FALSE);
+    SetFocus(hwnd_);
+    ListView_EditLabel(hwnd_, idx);
+}
+
+void FilePane::showProperties() {
+    if (live_.path == kRecycleBinPath) return;  // entries aren't real paths
+    const auto paths = selectedPaths();
+    if (paths.size() > 1) {
+        if (auto data = ShellSelection::get<IDataObject>(parentWnd_, paths)) SHMultiFileProperties(data.get(), 0);
+        return;
+    }
+    // Nothing selected = the folder being shown, as in Explorer.
+    const std::wstring& target = paths.empty() ? live_.path : paths.front();
+    if (!target.empty()) SHObjectProperties(parentWnd_, SHOP_FILEPATH, target.c_str(), nullptr);
 }
 
 void FilePane::doView() {
@@ -602,9 +654,30 @@ LRESULT FilePane::handleNotify(NMHDR* nmhdr) {
             } else if (kd->wVKey == VK_BACK) {
                 goUp();
             } else if (kd->wVKey == VK_DELETE) {
-                doDelete();
+                doDelete((GetKeyState(VK_SHIFT) & 0x8000) != 0);
             }
             return 0;
+        }
+        case LVN_ODFINDITEMW: {
+            // Type-to-select: owner-data lists can't search their own
+            // items, so the control asks us for the typed prefix's row.
+            auto* fi = reinterpret_cast<NMLVFINDITEMW*>(nmhdr);
+            if (!(fi->lvfi.flags & (LVFI_STRING | LVFI_PARTIAL)) || !fi->lvfi.psz) return -1;
+            return FileEntrySort::findByPrefix(live_.entries, fi->lvfi.psz, fi->iStart,
+                                               (fi->lvfi.flags & LVFI_WRAP) != 0);
+        }
+        case LVN_BEGINLABELEDITW: {
+            auto* di = reinterpret_cast<NMLVDISPINFOW*>(nmhdr);
+            const int idx = di->item.iItem;
+            if (idx < 0 || static_cast<size_t>(idx) >= live_.entries.size()) return TRUE;
+            // Preselect just the name, not the extension, as Explorer does.
+            // Posted: the control applies its own select-all after this.
+            if (HWND edit = ListView_GetEditControl(hwnd_)) {
+                const FileEntry& e = live_.entries[idx];
+                PostMessageW(edit, EM_SETSEL, 0,
+                             static_cast<LPARAM>(NameParts::renameSelectionEnd(e.name, e.isDirectory())));
+            }
+            return FALSE;
         }
         case LVN_ENDLABELEDITW: {
             auto* di = reinterpret_cast<NMLVDISPINFOW*>(nmhdr);

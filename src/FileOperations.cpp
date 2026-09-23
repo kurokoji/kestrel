@@ -77,10 +77,10 @@ bool moveItems(HWND owner, const std::vector<std::wstring>& sources, const std::
     });
 }
 
-bool deleteItems(HWND owner, const std::vector<std::wstring>& sources) {
+bool deleteItems(HWND owner, const std::vector<std::wstring>& sources, bool permanent) {
     if (sources.empty()) return true;
 
-    return runFileOperation(owner, FOF_ALLOWUNDO, [&](ComPtr<IFileOperation>& pfo) {
+    return runFileOperation(owner, permanent ? 0 : FOF_ALLOWUNDO, [&](ComPtr<IFileOperation>& pfo) {
         for (const auto& src : sources) {
             auto item = itemFromPath(src);
             if (!item) continue;

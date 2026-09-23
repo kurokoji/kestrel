@@ -235,6 +235,10 @@ void FilePane::loadTabIntoLive(int index) {
     ListView_SetItemCountEx(hwnd_, static_cast<int>(live_.entries.size()), LVSICF_NOSCROLL);
     InvalidateRect(hwnd_, nullptr, TRUE);
 
+    // The same physical ListView still holds the outgoing tab's selected
+    // rows; clear them so they don't merge into this tab's restored set.
+    ListView_SetItemState(hwnd_, -1, 0, LVIS_SELECTED | LVIS_FOCUSED);
+
     // Restore selection/focus/scroll so switching tabs and back doesn't
     // look like the selection got cleared and the view jumped to the top.
     // LVM_SETITEMSTATE fires LVN_ITEMCHANGED same as a real click would,

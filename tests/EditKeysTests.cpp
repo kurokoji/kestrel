@@ -18,3 +18,7 @@ TEST_CASE("modified clipboard chords are not claimed by the edit") {
     CHECK_FALSE(EditKeys::editOwnsKey('C', true, true, false));
     CHECK_FALSE(EditKeys::editOwnsKey('V', true, false, true));
 }
+
+TEST_CASE("select-all is left to a focused edit control") {
+    CHECK(EditKeys::editOwnsKey('A', true, false, false));
+}

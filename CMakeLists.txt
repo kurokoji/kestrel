@@ -36,6 +36,7 @@ add_executable(kestrel WIN32
     src/DriveBadge.cpp
     src/DropTargetPath.cpp
     src/FileDropTarget.cpp
+    src/NameParts.cpp
     src/kestrel.rc
 )
 
@@ -93,6 +94,8 @@ if(KESTREL_BUILD_TESTS)
         src/DriveBadge.cpp
         tests/DropTargetPathTests.cpp
         src/DropTargetPath.cpp
+        tests/NamePartsTests.cpp
+        src/NameParts.cpp
     )
 
     target_include_directories(kestrel_tests PRIVATE
