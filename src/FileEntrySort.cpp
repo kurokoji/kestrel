@@ -12,7 +12,7 @@ void sort(std::vector<FileEntry>& entries, int sortColumn, bool ascending) {
         int cmp = 0;
         switch (sortColumn) {
             case 1:
-                cmp = _wcsicmp(a.extension.c_str(), b.extension.c_str());
+                cmp = _wcsicmp(a.typeName.c_str(), b.typeName.c_str());
                 break;
             case 2:
                 cmp = (a.size < b.size) ? -1 : (a.size > b.size ? 1 : 0);

@@ -16,4 +16,8 @@ size_t renameSelectionEnd(const std::wstring& name, bool isDirectory);
 // `existingNames` (compared case-insensitively, as the file system does).
 std::wstring uniqueName(const std::vector<std::wstring>& existingNames, const std::wstring& base);
 
+// Type column text when the shell has no registered type name: "ABC
+// ファイル" for ".abc", as Explorer shows it.
+std::wstring fallbackTypeName(const std::wstring& extension, bool isDirectory);
+
 }  // namespace NameParts

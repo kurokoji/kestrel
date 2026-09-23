@@ -24,3 +24,9 @@ TEST_CASE("uniqueName numbers from (2) like Explorer, case-insensitively") {
     const std::vector<std::wstring> existing{L"New Folder", L"new folder (2)"};
     CHECK(NameParts::uniqueName(existing, L"New Folder") == L"New Folder (3)");
 }
+
+TEST_CASE("fallbackTypeName mimics Explorer's text for unregistered types") {
+    CHECK(NameParts::fallbackTypeName(L".abc", false) == L"ABC ファイル");
+    CHECK(NameParts::fallbackTypeName(L"", false) == L"ファイル");
+    CHECK(NameParts::fallbackTypeName(L"", true) == L"ファイル フォルダー");
+}

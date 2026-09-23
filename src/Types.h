@@ -51,6 +51,11 @@ struct FileEntry {
     // mean a fresh heap-allocated copy per row per paint.
     std::wstring lowercaseName;
 
+    // Shell type name for the Type column ("テキスト ドキュメント"), looked
+    // up once per extension by DirectoryModel::run - also what the Type
+    // column sorts by.
+    std::wstring typeName;
+
     [[nodiscard]] bool isDirectory() const noexcept {
         return (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
     }

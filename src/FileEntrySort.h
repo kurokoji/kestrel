@@ -6,7 +6,7 @@
 
 // Pure sort/search logic pulled out of FilePane so it can be unit tested
 // without an HWND. Column numbering and comparison rules must stay in sync
-// with FilePane's list-view columns (0=name, 1=extension, 2=size, 3=modified).
+// with FilePane's list-view columns (0=name, 1=type name, 2=size, 3=modified).
 namespace FileEntrySort {
 
 void sort(std::vector<FileEntry>& entries, int sortColumn, bool ascending);

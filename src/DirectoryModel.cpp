@@ -2,7 +2,9 @@
 #include "DirectoryModel.h"
 #include "Formatting.h"
 #include "Messages.h"
+#include "NameParts.h"
 
+#include <shellapi.h>
 #include <shlobj.h>
 #include <shlwapi.h>
 #include <propkey.h>
@@ -10,6 +12,8 @@
 #include <algorithm>
 #include <format>
 #include <memory>
+#include <mutex>
+#include <unordered_map>
 
 namespace {
 struct AbsolutePidlDeleter {
@@ -23,6 +27,33 @@ struct ChildPidlDeleter {
     void operator()(pointer pidl) const { CoTaskMemFree(pidl); }
 };
 using OwnedChildPidl = std::unique_ptr<ITEMIDLIST, ChildPidlDeleter>;
+// The Type column's text ("テキスト ドキュメント"). The shell answers per
+// extension (not per file) with SHGFI_USEFILEATTRIBUTES, so each one is
+// looked up once and shared by both panes' worker threads.
+std::wstring shellTypeName(const std::wstring& extension, bool isDirectory) {
+    static std::mutex mutex;
+    static std::unordered_map<std::wstring, std::wstring> cache;
+    const std::wstring key = isDirectory ? L"\\" : extension;  // "\" can't be an extension
+    {
+        std::lock_guard lock(mutex);
+        if (auto it = cache.find(key); it != cache.end()) return it->second;
+    }
+
+    SHFILEINFOW info{};
+    const std::wstring probe = L"x" + extension;
+    std::wstring name;
+    if (SHGetFileInfoW(probe.c_str(), isDirectory ? FILE_ATTRIBUTE_DIRECTORY : FILE_ATTRIBUTE_NORMAL, &info,
+                       sizeof(info), SHGFI_TYPENAME | SHGFI_USEFILEATTRIBUTES) &&
+        info.szTypeName[0] != L'\0') {
+        name = info.szTypeName;
+    } else {
+        name = NameParts::fallbackTypeName(extension, isDirectory);
+    }
+
+    std::lock_guard lock(mutex);
+    return cache.try_emplace(key, std::move(name)).first->second;
+}
+
 }  // namespace
 
 DirectoryModel::~DirectoryModel() {
@@ -128,6 +159,7 @@ void DirectoryModel::run(std::stop_token stopToken, std::wstring path, HWND noti
                                 VariantClear(&dateVar);
                             }
                             entry.formattedModified = Formatting::formatFileTime(entry.modified);
+                            entry.typeName = shellTypeName(entry.extension, entry.isDirectory());
 
                             result->entries.push_back(std::move(entry));
 
@@ -160,6 +192,9 @@ void DirectoryModel::run(std::stop_token stopToken, std::wstring path, HWND noti
             entry.lowercaseName = root;
             std::ranges::transform(entry.lowercaseName, entry.lowercaseName.begin(), ::towlower);
             entry.attributes = FILE_ATTRIBUTE_DIRECTORY;
+            // Per drive ("ローカル ディスク", "CD ドライブ"), so the real root is asked.
+            SHFILEINFOW info{};
+            if (SHGetFileInfoW(root.c_str(), 0, &info, sizeof(info), SHGFI_TYPENAME)) entry.typeName = info.szTypeName;
 
             ULARGE_INTEGER freeAvail{}, total{};
             if (GetDiskFreeSpaceExW(root.c_str(), &freeAvail, &total, nullptr)) {
@@ -218,6 +253,7 @@ void DirectoryModel::run(std::stop_token stopToken, std::wstring path, HWND noti
             entry.formattedSize = Formatting::formatSize(entry.size);
         }
         entry.formattedModified = Formatting::formatFileTime(entry.modified);
+        entry.typeName = shellTypeName(entry.extension, entry.isDirectory());
         result->entries.push_back(std::move(entry));
 
         // Cooperative cancellation: bail without posting if a newer

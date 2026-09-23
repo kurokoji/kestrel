@@ -46,14 +46,21 @@ TEST_CASE("sort by name is case-insensitive and respects ascending/descending") 
     CHECK(namesOf(entries) == std::vector<std::wstring>{L"Cherry", L"Banana", L"apple"});
 }
 
-TEST_CASE("sort by extension falls back to name on a tie") {
+TEST_CASE("sort by type orders by the displayed type name, falling back to name on a tie") {
+    auto typed = [](const std::wstring& name, const std::wstring& ext, const std::wstring& type) {
+        FileEntry e = makeEntry(name, false, 0, ext);
+        e.typeName = type;
+        return e;
+    };
+    // By type name, not extension: ".zip" ("Archive") sorts before ".md" here.
     std::vector<FileEntry> entries{
-        makeEntry(L"b.txt", false, 0, L".txt"),
-        makeEntry(L"a.txt", false, 0, L".txt"),
-        makeEntry(L"c.md", false, 0, L".md"),
+        typed(L"b.txt", L".txt", L"Text Document"),
+        typed(L"c.md", L".md", L"Markdown"),
+        typed(L"a.txt", L".txt", L"text document"),  // case-insensitive tie
+        typed(L"d.zip", L".zip", L"Archive"),
     };
     FileEntrySort::sort(entries, /*sortColumn=*/1, /*ascending=*/true);
-    CHECK(namesOf(entries) == std::vector<std::wstring>{L"c.md", L"a.txt", L"b.txt"});
+    CHECK(namesOf(entries) == std::vector<std::wstring>{L"d.zip", L"c.md", L"a.txt", L"b.txt"});
 }
 
 TEST_CASE("sort by size orders smallest to largest ascending") {

@@ -124,7 +124,7 @@ bool FilePane::create(HWND parent, HINSTANCE hInstance, int controlId, int paneI
 
     struct ColSpec { const wchar_t* text; int width; };
     static constexpr ColSpec cols[] = {
-        {L"名前", 220}, {L"種類", 70}, {L"サイズ", 80}, {L"更新日時", 130},
+        {L"名前", 220}, {L"種類", 120}, {L"サイズ", 80}, {L"更新日時", 130},
     };
     for (int i = 0; i < 4; ++i) {
         LVCOLUMNW col{};
@@ -597,9 +597,7 @@ LRESULT FilePane::handleNotify(NMHDR* nmhdr) {
                 const wchar_t* text = L"";
                 switch (di->item.iSubItem) {
                     case 0: text = e.name.c_str(); break;
-                    case 1:
-                        text = e.isDirectory() ? L"フォルダー" : (e.extension.empty() ? L"ファイル" : e.extension.c_str());
-                        break;
+                    case 1: text = e.typeName.c_str(); break;
                     case 2: text = e.formattedSize.c_str(); break;
                     case 3: text = e.formattedModified.c_str(); break;
                     default: break;

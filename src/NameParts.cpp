@@ -28,4 +28,12 @@ std::wstring uniqueName(const std::vector<std::wstring>& existingNames, const st
     return candidate;
 }
 
+std::wstring fallbackTypeName(const std::wstring& extension, bool isDirectory) {
+    if (isDirectory) return L"ファイル フォルダー";
+    if (extension.size() <= 1) return L"ファイル";
+    std::wstring upper = extension.substr(1);  // without the leading dot
+    std::ranges::transform(upper, upper.begin(), ::towupper);
+    return upper + L" ファイル";
+}
+
 }  // namespace NameParts
