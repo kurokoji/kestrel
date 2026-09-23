@@ -60,11 +60,12 @@ int IconCache::iconForPath(const std::wstring& path) {
 
     int icon = -1;
     SHFILEINFOW sfi{};
-    if (path == kThisPcPath) {
-        // Not a real filesystem path - SHGetFileInfoW needs a PIDL for the
-        // virtual "This PC" namespace root rather than a path string.
+    if (path == kThisPcPath || path == kRecycleBinPath) {
+        // Not a real filesystem path - SHGetFileInfoW needs a PIDL for a
+        // virtual namespace root rather than a path string.
+        const auto folderId = path == kThisPcPath ? FOLDERID_ComputerFolder : FOLDERID_RecycleBinFolder;
         PIDLIST_ABSOLUTE pidl = nullptr;
-        if (SUCCEEDED(SHGetKnownFolderIDList(FOLDERID_ComputerFolder, 0, nullptr, &pidl))) {
+        if (SUCCEEDED(SHGetKnownFolderIDList(folderId, 0, nullptr, &pidl))) {
             if (SHGetFileInfoW(reinterpret_cast<LPCWSTR>(pidl), 0, &sfi, sizeof(sfi),
                                 SHGFI_SYSICONINDEX | SHGFI_SMALLICON | SHGFI_PIDL)) {
                 icon = sfi.iIcon;

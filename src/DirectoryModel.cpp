@@ -1,10 +1,29 @@
+#include "ComPtr.h"
 #include "DirectoryModel.h"
 #include "Formatting.h"
 #include "Messages.h"
 
+#include <shlobj.h>
+#include <shlwapi.h>
+#include <propkey.h>
+#include <oleauto.h>
 #include <algorithm>
 #include <format>
 #include <memory>
+
+namespace {
+struct AbsolutePidlDeleter {
+    using pointer = PIDLIST_ABSOLUTE;
+    void operator()(pointer pidl) const { CoTaskMemFree(pidl); }
+};
+using OwnedAbsolutePidl = std::unique_ptr<ITEMIDLIST, AbsolutePidlDeleter>;
+
+struct ChildPidlDeleter {
+    using pointer = PITEMID_CHILD;
+    void operator()(pointer pidl) const { CoTaskMemFree(pidl); }
+};
+using OwnedChildPidl = std::unique_ptr<ITEMIDLIST, ChildPidlDeleter>;
+}  // namespace
 
 DirectoryModel::~DirectoryModel() {
     cancel();
@@ -28,6 +47,105 @@ void DirectoryModel::run(std::stop_token stopToken, std::wstring path, HWND noti
     auto result = std::make_unique<EnumerationResult>();
     result->requestId = requestId;
     result->path = path;
+
+    if (path == kRecycleBinPath) {
+        // IShellFolder needs COM on this thread - plain FindFirstFileExW
+        // enumeration below doesn't, so this is scoped to just this branch
+        // (see PreviewPane::loadWorker for the same CoInitializeEx/
+        // CoUninitialize-pair-per-worker-thread pattern).
+        CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+
+        PIDLIST_ABSOLUTE rawBinPidl = nullptr;
+        if (SUCCEEDED(SHGetKnownFolderIDList(FOLDERID_RecycleBinFolder, 0, nullptr, &rawBinPidl))) {
+            OwnedAbsolutePidl binPidl(rawBinPidl);
+            ComPtr<IShellFolder> desktop;
+            if (SUCCEEDED(SHGetDesktopFolder(desktop.addressOf()))) {
+                ComPtr<IShellFolder2> binFolder;
+                if (SUCCEEDED(desktop->BindToObject(binPidl.get(), nullptr, IID_PPV_ARGS(binFolder.addressOf())))) {
+                    ComPtr<IEnumIDList> enumIds;
+                    if (SUCCEEDED(binFolder->EnumObjects(
+                            nullptr, SHCONTF_FOLDERS | SHCONTF_NONFOLDERS | SHCONTF_INCLUDEHIDDEN,
+                            enumIds.addressOf()))) {
+                        result->entries.reserve(64);
+                        PITEMID_CHILD rawChild = nullptr;
+                        while (enumIds->Next(1, &rawChild, nullptr) == S_OK) {
+                            OwnedChildPidl childPidl(rawChild);
+
+                            FileEntry entry;
+
+                            STRRET strret{};
+                            wchar_t nameBuf[MAX_PATH] = L"";
+                            // SHGDN_NORMAL returns the recycle bin's fully
+                            // qualified original-location string here;
+                            // SHGDN_INFOLDER is what actually gives the
+                            // bare display name Explorer's own Name column
+                            // shows.
+                            if (SUCCEEDED(binFolder->GetDisplayNameOf(childPidl.get(), SHGDN_INFOLDER, &strret))) {
+                                StrRetToBufW(&strret, childPidl.get(), nameBuf, MAX_PATH);
+                            }
+                            entry.name = nameBuf;
+                            entry.lowercaseName = entry.name;
+                            std::ranges::transform(entry.lowercaseName, entry.lowercaseName.begin(), ::towlower);
+
+                            PCUITEMID_CHILD apidl[] = {childPidl.get()};
+                            SFGAOF attrs = SFGAO_FOLDER;
+                            if (SUCCEEDED(binFolder->GetAttributesOf(1, apidl, &attrs)) && (attrs & SFGAO_FOLDER)) {
+                                entry.attributes |= FILE_ATTRIBUTE_DIRECTORY;
+                            }
+
+                            if (!entry.isDirectory()) {
+                                if (const size_t dot = entry.name.find_last_of(L'.');
+                                    dot != std::wstring::npos && dot != 0) {
+                                    entry.extension = entry.name.substr(dot);
+                                    std::ranges::transform(entry.extension, entry.extension.begin(), ::towlower);
+                                }
+
+                                VARIANT sizeVar{};
+                                VariantInit(&sizeVar);
+                                if (SUCCEEDED(binFolder->GetDetailsEx(childPidl.get(), &PKEY_Size, &sizeVar))) {
+                                    if (sizeVar.vt == VT_UI8) entry.size = sizeVar.ullVal;
+                                    VariantClear(&sizeVar);
+                                }
+                                entry.formattedSize = Formatting::formatSize(entry.size);
+                            }
+
+                            // Original modified time (not deletion time) -
+                            // GetDetailsEx hands back a plain VARIANT, whose
+                            // DATE representation (days-since-1899, not
+                            // FILETIME - classic VARIANT has no FILETIME
+                            // member) needs converting back through
+                            // SYSTEMTIME to the FILETIME the rest of the
+                            // app's formatting/sorting code expects.
+                            VARIANT dateVar{};
+                            VariantInit(&dateVar);
+                            if (SUCCEEDED(binFolder->GetDetailsEx(childPidl.get(), &PKEY_DateModified, &dateVar))) {
+                                if (dateVar.vt == VT_DATE) {
+                                    SYSTEMTIME st{};
+                                    if (VariantTimeToSystemTime(dateVar.date, &st)) {
+                                        SystemTimeToFileTime(&st, &entry.modified);
+                                    }
+                                }
+                                VariantClear(&dateVar);
+                            }
+                            entry.formattedModified = Formatting::formatFileTime(entry.modified);
+
+                            result->entries.push_back(std::move(entry));
+
+                            if (stopToken.stop_requested()) {
+                                CoUninitialize();
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        CoUninitialize();
+        result->success = true;
+        PostMessageW(notifyWnd, WM_APP_DIR_RESULT, token, reinterpret_cast<LPARAM>(result.release()));
+        return;
+    }
 
     if (path == kThisPcPath) {
         const DWORD drives = GetLogicalDrives();

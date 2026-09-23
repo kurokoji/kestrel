@@ -274,6 +274,9 @@ std::wstring FilePane::pathForIndex(int index) const {
 
 void FilePane::activateEntry(int index) {
     if (index < 0 || static_cast<size_t>(index) >= live_.entries.size()) return;
+    // Recycle Bin entries aren't real paths (see kRecycleBinPath) - nothing
+    // to navigate into or open. Restore/permanent-delete isn't implemented.
+    if (live_.path == kRecycleBinPath) return;
     const FileEntry& e = live_.entries[index];
     if (e.isDirectory()) {
         navigate(joinPath(live_.path, e.name), true);
@@ -284,6 +287,10 @@ void FilePane::activateEntry(int index) {
 
 std::vector<std::wstring> FilePane::selectedPaths() const {
     std::vector<std::wstring> result;
+    // Recycle Bin entries aren't real paths - this single choke point feeds
+    // cut/copy/delete/drag/context-menu, so returning empty here disables
+    // all of them for this view rather than guarding each caller.
+    if (live_.path == kRecycleBinPath) return result;
     int idx = -1;
     while ((idx = ListView_GetNextItem(hwnd_, idx, LVNI_SELECTED)) != -1) {
         result.push_back(pathForIndex(idx));
@@ -311,6 +318,7 @@ std::wstring FilePane::focusedItemPath() const {
 }
 
 void FilePane::doRename() {
+    if (live_.path == kRecycleBinPath) return;
     int idx = ListView_GetNextItem(hwnd_, -1, LVNI_FOCUSED);
     if (idx < 0) return;
     SetFocus(hwnd_);

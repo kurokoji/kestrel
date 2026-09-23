@@ -79,6 +79,11 @@ void TreePane::addRootItems() {
     addKnownFolder(FOLDERID_Music, L"ミュージック");
     addKnownFolder(FOLDERID_Videos, L"ビデオ");
 
+    // Leaf node (no expand arrow, cChildren=false) - its contents are
+    // listed in the file pane like any other navigable node, but aren't a
+    // *tree* of subfolders, so there's nothing here to lazily expand.
+    addNode(nullptr, L"ゴミ箱", kRecycleBinPath, false);
+
     // cChildren must already claim "has children" here - comctl32 gates
     // TVE_EXPAND on that hint, not just on whether child items actually
     // exist yet, so inserting the real drive nodes below and expanding

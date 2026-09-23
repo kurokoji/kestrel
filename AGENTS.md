@@ -572,3 +572,43 @@ commit - don't let it drift out of sync with what the app actually does.
   2=Size, 3=Modified) matches the existing `LVN_COLUMNCLICK`/
   `FileEntrySort::sort` convention already used for the interactive
   per-tab sort, not a separate numbering.
+- The tree's "ゴミ箱" node (`kRecycleBinPath`, same `::{CLSID}` sentinel
+  convention as `kThisPcPath` - see Types.h) lists the real Recycle Bin's
+  contents, not a fake/static view. `DirectoryModel::run` special-cases
+  it like it does `kThisPcPath`, but the enumeration itself is a
+  different mechanism entirely: `$Recycle.Bin`'s on-disk names/layout
+  (per-SID folders, `$Rxxxx` mangled names) aren't the shell-visible
+  ones, so it has to go through `IShellFolder2` (bound via
+  `SHGetKnownFolderIDList(FOLDERID_RecycleBinFolder, ...)` +
+  `IShellFolder::BindToObject`, mirroring `ShellSelection.cpp`'s
+  PIDL-binding pattern) rather than `FindFirstFileExW`. This needs COM on
+  the enumeration thread - `CoInitializeEx`/`CoUninitialize` are scoped to
+  just this branch (see `PreviewPane::loadWorker` for the same
+  per-worker-thread pattern), since the plain-directory path below it
+  doesn't need COM at all.
+  `IShellFolder2::GetDisplayNameOf` needs `SHGDN_INFOLDER`, not
+  `SHGDN_NORMAL` - `SHGDN_NORMAL` returns the item's fully-qualified
+  *original* location string (e.g. `C:\Users\...\Downloads\foo.zip`)
+  instead of the bare filename Explorer's own Name column shows. Caught
+  by a live screenshot after wiring this up with `SHGDN_NORMAL` first -
+  the list showed full original paths in the Name column instead of
+  filenames.
+  `GetDetailsEx`'s `VARIANT` out-param has no `FILETIME` member (that's
+  only on `PROPVARIANT`, a different type) - `PKEY_DateModified` comes
+  back as `VT_DATE` (a `double`, days-since-1899), so it has to be run
+  through `VariantTimeToSystemTime` + `SystemTimeToFileTime` to get the
+  `FILETIME` the rest of the app's formatting/sorting code expects.
+  `VariantTimeToSystemTime`/`VariantClear` need `oleaut32` linked (added
+  to `CMakeLists.txt` - `ole32` alone doesn't export them).
+  Deliberately a **read-only view**: entries here are display-only
+  synthesized `FileEntry`s, not real filesystem paths, so opening,
+  renaming, cutting/copying, or dragging them would either silently fail
+  or (worse) construct a bogus concatenated path that happens not to
+  crash but does nothing sane. Rather than guard every operation's entry
+  point separately, `FilePane::selectedPaths()` - the single choke point
+  every cut/copy/delete/drag/context-menu action reads its target list
+  from - returns empty for this view, which disables all of them in one
+  place; `activateEntry()` (open/navigate) and `doRename()` (F2) are
+  guarded directly since they don't go through `selectedPaths()`.
+  Restore-from-recycle-bin isn't implemented at all yet - out of scope
+  for the initial "show it in the tree" ask.

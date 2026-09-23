@@ -15,6 +15,18 @@
 // relative to a real containing folder.
 inline constexpr wchar_t kThisPcPath[] = L"::{20D04FE0-3AEA-1069-A2D8-08002B30309D}";
 
+// Sentinel "path" for the virtual Recycle Bin view (TreePane's "ゴミ箱"
+// node). Same shell `::{CLSID}` convention as kThisPcPath, and for the same
+// reason: the recycle bin's real children are enumerated through
+// IShellFolder (DirectoryModel::run special-cases this path), not
+// FindFirstFileExW, since $Recycle.Bin's on-disk names/layout aren't the
+// shell-visible ones. Unlike kThisPcPath, entries under it are NOT
+// navigable/operable real paths - FilePane disables rename/cut/copy/
+// delete/drag/open for this view (see FilePane::selectedPaths,
+// FilePane::activateEntry, FilePane::doRename) rather than trying to
+// synthesize a real path for a deleted item.
+inline constexpr wchar_t kRecycleBinPath[] = L"::{645FF040-5081-101B-9F08-00AA002F954E}";
+
 // Plain data describing one directory entry. Kept intentionally simple: no
 // virtual functions, no inheritance, cheap to move around in a vector.
 struct FileEntry {

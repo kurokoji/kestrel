@@ -53,6 +53,7 @@ target_link_libraries(kestrel PRIVATE
     shell32
     shlwapi
     ole32
+    oleaut32
     uuid
     gdi32
     gdiplus
