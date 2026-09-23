@@ -335,6 +335,20 @@ commit - don't let it drift out of sync with what the app actually does.
   PowerShell 5, so Japanese literals in them (window titles to match)
   silently turn into mojibake - enumerate windows and filter by class
   instead of matching a Japanese title.
+- The user may be running their own `build\kestrel.exe` while you work
+  (it locks the exe: `LNK1104`). Don't close or kill it - build into a
+  separate directory instead (`cmake -B <scratch>\kbuild`, same
+  sources), start that exe with `Start-Process -PassThru`, and find *its*
+  main window by process id rather than `FindWindow` (which can return
+  the user's window). End it with `Stop-Process -Id`: a killed instance
+  never writes session.ini, so the user's saved session stays untouched.
+- Don't test "entering a file path opens it" style features with a real
+  file: it launches the user's associated app (a Notepad window stayed
+  open this way). Check the branch taken some other way.
+- Heredocs and inline strings passed through the Bash tool can lose a
+  level of backslash escaping (`L"C:\\x"` arrived as `L"C:\x"`, a hex
+  escape). Write C++ sources/tests containing backslashes with the
+  Write/Edit tools, or put edit scripts in a file first.
 - Stop the app with `WM_CLOSE`, not `Stop-Process`, when the session file
   matters: a killed process doesn't save, so the next launch restores
   whatever was saved before (possibly the user's real folders, not your
