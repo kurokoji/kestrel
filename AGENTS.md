@@ -819,7 +819,35 @@ commit - don't let it drift out of sync with what the app actually does.
   the *destination* pane's active tab (matches "a tab you just dropped
   somewhere is now what you're looking at"); the *source* pane's own
   active-tab focus/selection is untouched beyond whatever index shift the
-  removal caused. Not yet verified with a real mouse drag in this sandbox
-  (see the synthetic-input gotchas above - reordering within one pane was
-  already verified live in an earlier session; this cross-pane path only
-  has a clean build + `kestrel_tests` pass behind it so far).
+  removal caused.
+  - **First version of this shipped with a real bug, caught by the user
+    live** (not reproducible in this sandbox - see the synthetic-input
+    gotchas above): dragging a non-active tab across to the other pane's
+    strip visibly tracked the ghost the whole way, but dropping it did
+    nothing - only dragging the already-active tab actually worked. Cause:
+    `TabStripSubclassProc`'s `WM_LBUTTONDOWN` used to call `switchToTab(idx)`
+    immediately on press, before any drag was even confirmed, so clicking
+    a background tab synchronously kicked off `switchToTab` ->
+    `loadTabIntoLive` -> `navigate()`'s re-enumeration right there. A fast
+    click-drag-release could complete the whole gesture (press, past the
+    drag threshold, release) before that call returned, which meant
+    `dragActive_` might never even become true and the eventual
+    `WM_LBUTTONUP` saw nothing to drop. Clicking the tab that was already
+    active hit `switchToTab`'s `index == activeTab_` early-return - a
+    no-op - so that path never had the delay and always looked fine,
+    which is what made it read as "only the active tab moves". Fixed by
+    deferring `switchToTab` to `WM_LBUTTONUP` and only calling it when
+    `dragActive_` never went true (a plain click) - a real drag now
+    reorders/hands off the tab without ever synchronously reselecting it
+    mid-gesture. Same root cause exposed a second bug worth keeping fixed
+    together: `removeTab` (both `closeTab` and this hand-off use it) took
+    `tabs_[index]` straight from storage without syncing `live_` into it
+    first, so removing/handing off the *active* tab could revert it to
+    however it looked as of the last actual tab switch rather than its
+    current path/scroll/selection - `removeTab` now calls
+    `syncActiveTabIntoStorage()` first when `index == activeTab_`.
+  - Still not verified with a real mouse drag in this sandbox for the
+    reasons above; the fix was verified by re-reading the corrected
+    control flow against the bug report, plus a clean build +
+    `kestrel_tests` pass. Confirm live before trusting this note over a
+    fresh bug report.

@@ -130,14 +130,23 @@ LRESULT CALLBACK FilePane::TabStripSubclassProc(HWND hwnd, UINT msg, WPARAM wPar
                 return 0;
             }
             // Not the close glyph - this press might turn into a
-            // reorder drag; WM_MOUSEMOVE below decides once it crosses
-            // the drag threshold. A plain click (never crossing that
-            // threshold) still needs to select the tab, same as clicking
-            // any tab strip normally would.
+            // reorder/cross-pane drag; WM_MOUSEMOVE below decides once it
+            // crosses the drag threshold. Selecting the tab is deferred to
+            // WM_LBUTTONUP (only if no drag actually happened) rather than
+            // done here immediately: switchToTab() kicks off a
+            // re-enumeration (FilePane::navigate) whose cost scales with
+            // the tab's folder, and a fast click-drag-release on a
+            // non-active tab could finish the whole gesture (button down,
+            // past the drag threshold, button up) before that call even
+            // returns - swallowing the drag threshold check and the
+            // eventual drop entirely, since dragActive_ never got set.
+            // Reported as: dragging a background tab across to the other
+            // pane visibly tracks the ghost but never actually drops it,
+            // while dragging the already-active tab (switchToTab() is a
+            // same-tab no-op there) works fine.
             pane->dragTabIndex_ = idx;
             pane->dragActive_ = false;
             pane->dragStartPt_ = pt;
-            pane->switchToTab(idx);
         }
 
         // Reassert focus onto the file list - this is what makes this
@@ -153,6 +162,11 @@ LRESULT CALLBACK FilePane::TabStripSubclassProc(HWND hwnd, UINT msg, WPARAM wPar
                 pane->otherPane_->receiveTabFromOtherPane(*pane, pane->dragTabIndex_, pane->crossPaneDropIndex_);
             }
             pane->endTabDrag();
+        } else if (pane->dragTabIndex_ >= 0) {
+            // Never crossed the drag threshold - a plain click, which
+            // still needs to select the tab like clicking any tab strip
+            // normally would.
+            pane->switchToTab(pane->dragTabIndex_);
         }
         pane->crossPaneDropIndex_ = -1;
         pane->dragTabIndex_ = -1;
@@ -604,6 +618,13 @@ void FilePane::closeTab(int index) {
 // this never leaves a pane with zero tabs.
 FilePane::TabState FilePane::removeTab(int index) {
     const bool closingActive = (index == activeTab_);
+    // tabs_[activeTab_] only ever holds a snapshot from the last time
+    // something synced it (a tab switch/reorder) - live_ is where the
+    // active tab's actual current state (path/scroll/selection) lives in
+    // the meantime. Bring it up to date before taking tabs_[index],
+    // otherwise removing/handing off the active tab silently reverts it
+    // to however it looked as of that last sync.
+    if (closingActive) syncActiveTabIntoStorage();
     TabState removed = std::move(tabs_[index]);
     tabs_.erase(tabs_.begin() + index);
     hoveredCloseTab_ = -1;  // indices just shifted; next WM_MOUSEMOVE recomputes this
