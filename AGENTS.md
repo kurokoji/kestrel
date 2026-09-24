@@ -855,22 +855,18 @@ commit - don't let it drift out of sync with what the app actually does.
   purpose - explicitly requested over refusing the drag (the original
   behavior, matching closeTab()'s "always keep one tab" rule, which is
   still enforced for closeTab itself - only this hand-off path allows
-  zero). `FilePane::removeTab` now skips `loadTabIntoLive`/`onNavigated`
-  when the erase leaves `tabs_` empty (calling `loadTabIntoLive(-1)` there
-  would have indexed `tabs_[-1]`); `live_` is left showing whatever it last
-  held rather than reset, since the pane is about to be hidden, not
-  painted. `FilePane::hasNoTabs()` is what MainWindow's
-  `onTabCountChanged` handlers (now separate per pane, not a shared
-  lambda, since each needs to know *which* pane just changed) check to
-  fall back to single-pane mode: sets `singlePaneMode_ = true`,
-  `activePaneId_` to the *other* (still non-empty) pane, updates the
-  toolbar's check state the same way `IDM_VIEW_SINGLEPANE` does, and
-  `SetFocus`es that pane's list. The now-empty pane keeps its `tabs_`
-  empty rather than being auto-refilled with a fresh This-PC tab - it's
-  simply hidden by `layoutChildren()`'s existing single-pane-mode branch
-  until the user either drags a tab back onto it or turns single-pane mode
-  off. Toggling single-pane mode back off (`IDM_VIEW_SINGLEPANE`'s handler
-  in `MainWindow.cpp`) checks `inactivePane().hasNoTabs()` and calls
-  `newTab()` on it before flipping `singlePaneMode_` back - otherwise
-  re-enabling dual-pane would show a tabless FilePane still displaying
-  whatever `live_` it had at the moment it was emptied.
+  zero). `FilePane` doesn't need a whole tab to stay on screen: a pane
+  left with zero tabs just shows an empty listing (`FilePane::removeTab`
+  resets `live_` to a blank `TabContent{}`, zeroes the ListView's item
+  count, and recomputes the (now-zero) selection stats) rather than
+  falling back to single-pane mode or auto-refilling a fresh tab - "+" or
+  dragging another tab onto it are how it gets contents again. No
+  MainWindow-side handling needed for this at all (tried an earlier
+  version that detected the zero-tab pane from `onTabCountChanged` and
+  forced `singlePaneMode_` on - scrapped per explicit feedback that a pane
+  need not always hold a tab). One real trap here: `removeTab` computes
+  `loadTabIntoLive`'s target index as `tabs_.size() - 1` when the removed
+  tab was active - with `tabs_` now empty that's `-1`, so the empty-listing
+  reset path is a genuinely separate branch, not something that could be
+  folded into `loadTabIntoLive` by relaxing its bounds check (it still
+  assumes a valid index and always will - every other caller has one).

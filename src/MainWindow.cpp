@@ -418,30 +418,9 @@ void MainWindow::onCreate() {
     left_.onSearchVisibilityChanged = onSearchVisibility;
     right_.onSearchVisibilityChanged = onSearchVisibility;
 
-    // A pane can hit zero tabs only via a cross-pane tab drag taking its
-    // last one (FilePane::receiveTabFromOtherPane) - fall back to
-    // single-pane mode showing whichever pane still has tabs, same as View
-    // > シングルペイン表示 does, rather than leave an empty pane on screen.
-    auto onLeftTabCountChanged = [this] {
-        if (left_.hasNoTabs()) {
-            activePaneId_ = right_.paneId();
-            singlePaneMode_ = true;
-            SendMessageW(toolbar_, TB_CHECKBUTTON, IDM_VIEW_SINGLEPANE, MAKELONG(TRUE, 0));
-            SetFocus(right_.hwnd());
-        }
-        layoutChildren();
-    };
-    auto onRightTabCountChanged = [this] {
-        if (right_.hasNoTabs()) {
-            activePaneId_ = left_.paneId();
-            singlePaneMode_ = true;
-            SendMessageW(toolbar_, TB_CHECKBUTTON, IDM_VIEW_SINGLEPANE, MAKELONG(TRUE, 0));
-            SetFocus(left_.hwnd());
-        }
-        layoutChildren();
-    };
-    left_.onTabCountChanged = onLeftTabCountChanged;
-    right_.onTabCountChanged = onRightTabCountChanged;
+    auto onTabCountChanged = [this] { layoutChildren(); };
+    left_.onTabCountChanged = onTabCountChanged;
+    right_.onTabCountChanged = onTabCountChanged;
 
     auto onEmptyButtonVisibility = [this] { layoutChildren(); };
     left_.onEmptyButtonVisibilityChanged = onEmptyButtonVisibility;
@@ -1110,14 +1089,6 @@ void MainWindow::onCommand(int id, HWND ctrl) {
             break;
         case IDM_VIEW_SINGLEPANE:
             singlePaneMode_ = !singlePaneMode_;
-            if (!singlePaneMode_ && inactivePane().hasNoTabs()) {
-                // The inactive pane can be sitting empty (a cross-pane tab
-                // drag took its last tab, which is what forced single-pane
-                // mode on in the first place - see FilePane::hasNoTabs).
-                // Give it back a starting tab rather than reappearing with
-                // none.
-                inactivePane().newTab();
-            }
             SendMessageW(toolbar_, TB_CHECKBUTTON, IDM_VIEW_SINGLEPANE, MAKELONG(singlePaneMode_ ? TRUE : FALSE, 0));
             layoutChildren();
             updateActivePaneFrame();

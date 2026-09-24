@@ -615,8 +615,7 @@ void FilePane::closeTab(int index) {
 // activeTab_/hoveredCloseTab_/layout the same way whether the tab is being
 // discarded (closeTab, which never lets this empty tabs_) or handed off to
 // the other pane (receiveTabFromOtherPane, which does allow it - taking a
-// pane's very last tab empties it, and the caller is responsible for then
-// hiding that pane; see FilePane::hasNoTabs).
+// pane's very last tab leaves it with zero, shown as an empty listing).
 FilePane::TabState FilePane::removeTab(int index) {
     const bool closingActive = (index == activeTab_);
     // tabs_[activeTab_] only ever holds a snapshot from the last time
@@ -632,14 +631,22 @@ FilePane::TabState FilePane::removeTab(int index) {
     relayoutTabs();
 
     if (closingActive) {
-        // tabs_ can be empty here (the last tab was just taken) - nothing
-        // left to load into live_, and the pane is about to be hidden by
-        // the caller rather than kept showing whatever live_ still holds.
         if (!tabs_.empty()) {
             const int newIndex = std::min(index, static_cast<int>(tabs_.size()) - 1);
             loadTabIntoLive(newIndex);
-            if (onNavigated) onNavigated(*this);
+        } else {
+            // tabs_ is empty (the last tab was just taken) - show an
+            // empty listing rather than leaving live_/the ListView
+            // displaying whatever this pane last had open, which no
+            // longer has a tabs_ entry backing it. The pane stays on
+            // screen (no single-pane fallback); "+" starts a fresh tab.
+            live_ = TabContent{};
+            ListView_SetItemState(hwnd_, -1, 0, LVIS_SELECTED | LVIS_FOCUSED);
+            ListView_SetItemCountEx(hwnd_, 0, LVSICF_NOSCROLL);
+            InvalidateRect(hwnd_, nullptr, TRUE);
+            recomputeSelectionStats();
         }
+        if (onNavigated) onNavigated(*this);
     } else if (activeTab_ > index) {
         --activeTab_;  // a tab before the active one shifted left
     }
@@ -661,15 +668,12 @@ int FilePane::hitTestScreenPoint(POINT screenPt) const {
     return hitTestTabApprox(client);
 }
 
-// `source` gives up tabs_[sourceIndex] - even its last-remaining tab: a
-// pane with zero tabs left is expected (FilePane::hasNoTabs, checked by
-// MainWindow's onTabCountChanged handler, which falls back to single-pane
-// mode showing whichever pane still has tabs - a dedicated pane for
-// browsing is a bigger commitment than a single tab, so losing the last
-// one closes the pane rather than refusing the drag). Inserted here at
-// atIndex (clamped to a valid position) and made the active tab, matching
-// how a dropped/dragged-in tab reads as "now showing" rather than a silent
-// background addition.
+// `source` gives up tabs_[sourceIndex] - even its last-remaining tab,
+// leaving it with zero (removeTab shows an empty listing in that case
+// rather than refusing the drag). Inserted here at atIndex (clamped to a
+// valid position) and made the active tab, matching how a dropped/
+// dragged-in tab reads as "now showing" rather than a silent background
+// addition.
 void FilePane::receiveTabFromOtherPane(FilePane& source, int sourceIndex, int atIndex) {
     if (&source == this) return;
     if (sourceIndex < 0 || static_cast<size_t>(sourceIndex) >= source.tabs_.size()) return;
