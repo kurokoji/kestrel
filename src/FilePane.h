@@ -100,6 +100,13 @@ public:
     int activeTabIndex() const { return activeTab_; }
     void restoreTabs(const std::vector<std::wstring>& paths, int activeIndex);
 
+    // True once a cross-pane tab drag has taken this pane's last tab (see
+    // receiveTabFromOtherPane) - MainWindow checks this from
+    // onTabCountChanged to fall back to single-pane mode showing the other
+    // pane, since a FilePane with zero tabs is never meant to stay on
+    // screen. Never true otherwise: closeTab() always keeps at least one.
+    bool hasNoTabs() const { return tabs_.empty(); }
+
     // Name/Type/Size/Modified column widths - one ListView per pane
     // shared across all its tabs, so this isn't per-tab state.
     std::array<int, 4> columnWidths() const;
