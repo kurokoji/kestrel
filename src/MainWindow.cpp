@@ -372,6 +372,8 @@ void MainWindow::onCreate() {
     preview_.create(hwnd_, hInstance_, IDC_PREVIEW);
     left_.create(hwnd_, hInstance_, IDC_LIST_LEFT, 0);
     right_.create(hwnd_, hInstance_, IDC_LIST_RIGHT, 1);
+    left_.setOtherPane(&right_);
+    right_.setOtherPane(&left_);
 
     SetWindowSubclass(tree_.hwnd(), XButtonForwardSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
     SetWindowSubclass(left_.hwnd(), XButtonForwardSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));

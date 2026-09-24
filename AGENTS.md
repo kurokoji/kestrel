@@ -790,3 +790,36 @@ commit - don't let it drift out of sync with what the app actually does.
     "空にする" button's show/hide and the real right-click menu's item
     labels only, via `WM_CANCELMODE` to dismiss without picking anything -
     never by actually clicking delete/empty).
+- Cross-pane tab drag (drag a tab from one pane's strip and drop it onto
+  the other pane's) reuses the existing same-pane reorder drag
+  (`TabStripSubclassProc`'s capture-based drag in FilePaneTabs.cpp) rather
+  than a second mechanism - once `SetCapture` is held, every subsequent
+  mouse message still targets the dragging pane's `tabHwnd_` regardless of
+  screen position, so crossing into the other pane's strip is detected by
+  converting the move point to screen coordinates and testing it against
+  `otherPane_->tabStripScreenRect()`, not by anything arriving at the
+  other pane's own window. `FilePane::otherPane_` is a plain raw pointer
+  MainWindow wires both directions right after `create()`ing both panes
+  (`setOtherPane`) - null and unused in any context that only builds one
+  pane (e.g. future tests). While the drag point is over the other pane's
+  strip, reordering in the source pane is suspended (no `moveTab` calls)
+  and `crossPaneDropIndex_` tracks the would-be drop index instead;
+  `updateTabDragGhost`'s clamp rect was widened from "this pane's strip
+  only" to `UnionRect` of both panes' `tabStripScreenRect()`s so the ghost
+  can actually reach the other strip rather than stopping dead at the
+  first pane's edge. The actual hand-off on drop
+  (`FilePane::receiveTabFromOtherPane`) reuses `removeTab` - refactored
+  out of the old inline body of `closeTab` so both "discard this tab" and
+  "the other pane is taking this tab" share the same index-fixup/
+  active-tab-reassignment logic, the only difference being what happens
+  to the returned `TabState` (dropped vs. inserted into the other pane's
+  `tabs_`). Still refuses to leave a pane with zero tabs, same as
+  `closeTab` always has - dragging a pane's last tab onto the other pane
+  is a no-op, not an accidental "this pane closes". The moved tab becomes
+  the *destination* pane's active tab (matches "a tab you just dropped
+  somewhere is now what you're looking at"); the *source* pane's own
+  active-tab focus/selection is untouched beyond whatever index shift the
+  removal caused. Not yet verified with a real mouse drag in this sandbox
+  (see the synthetic-input gotchas above - reordering within one pane was
+  already verified live in an earlier session; this cross-pane path only
+  has a clean build + `kestrel_tests` pass behind it so far).

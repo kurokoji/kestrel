@@ -147,7 +147,14 @@ LRESULT CALLBACK FilePane::TabStripSubclassProc(HWND hwnd, UINT msg, WPARAM wPar
         pane->activate();
         return 0;
     } else if (msg == WM_LBUTTONUP) {
-        if (pane->dragActive_) pane->endTabDrag();
+        if (pane->dragActive_) {
+            if (pane->otherPane_) pane->otherPane_->setTabDropHighlight(-1);
+            if (pane->crossPaneDropIndex_ >= 0 && pane->otherPane_) {
+                pane->otherPane_->receiveTabFromOtherPane(*pane, pane->dragTabIndex_, pane->crossPaneDropIndex_);
+            }
+            pane->endTabDrag();
+        }
+        pane->crossPaneDropIndex_ = -1;
         pane->dragTabIndex_ = -1;
         if (GetCapture() == hwnd) ReleaseCapture();
         pane->activate();
@@ -179,10 +186,23 @@ LRESULT CALLBACK FilePane::TabStripSubclassProc(HWND hwnd, UINT msg, WPARAM wPar
                 }
             }
             if (pane->dragActive_) {
-                const int overIdx = pane->hitTestTabApprox(pt);
-                if (overIdx >= 0 && overIdx != pane->dragTabIndex_) {
-                    pane->moveTab(pane->dragTabIndex_, overIdx);
-                    pane->dragTabIndex_ = overIdx;  // keep tracking the same logical tab as it slides past others
+                POINT screenPt = pt;
+                ClientToScreen(hwnd, &screenPt);
+                RECT otherRect{};
+                const bool overOther = pane->otherPane_ && (otherRect = pane->otherPane_->tabStripScreenRect(),
+                                                              PtInRect(&otherRect, screenPt));
+                if (overOther) {
+                    pane->crossPaneDropIndex_ = pane->otherPane_->hitTestScreenPoint(screenPt);
+                    pane->otherPane_->setTabDropHighlight(pane->crossPaneDropIndex_);
+                } else {
+                    if (pane->crossPaneDropIndex_ != -1 && pane->otherPane_) pane->otherPane_->setTabDropHighlight(-1);
+                    pane->crossPaneDropIndex_ = -1;
+
+                    const int overIdx = pane->hitTestTabApprox(pt);
+                    if (overIdx >= 0 && overIdx != pane->dragTabIndex_) {
+                        pane->moveTab(pane->dragTabIndex_, overIdx);
+                        pane->dragTabIndex_ = overIdx;  // keep tracking the same logical tab as it slides past others
+                    }
                 }
                 pane->updateTabDragGhost(pt);
                 return 0;  // skip the close-hover hit-test below while mid-drag
@@ -207,7 +227,11 @@ LRESULT CALLBACK FilePane::TabStripSubclassProc(HWND hwnd, UINT msg, WPARAM wPar
         // Something else stole the mouse capture mid-drag (e.g. a dialog
         // popped up) - drop the ghost rather than leave it stuck on
         // screen with no matching button-up ever arriving.
-        if (pane->dragActive_) pane->endTabDrag();
+        if (pane->dragActive_) {
+            if (pane->otherPane_) pane->otherPane_->setTabDropHighlight(-1);
+            pane->endTabDrag();
+        }
+        pane->crossPaneDropIndex_ = -1;
         pane->dragTabIndex_ = -1;
     }
     return DefSubclassProc(hwnd, msg, wParam, lParam);
@@ -344,18 +368,20 @@ void FilePane::beginTabDrag(int index, POINT clientPt) {
 void FilePane::updateTabDragGhost(POINT clientPt) {
     if (!dragGhost_) return;
 
-    // Only a reorder within the tab strip is meaningful - once the
-    // cursor leaves it (down into the file list, say), a floating tab
-    // snapshot sitting over unrelated UI just reads as a stray glitch.
-    // Clamp the ghost's own position to the strip's bounds instead of
-    // hiding it, so it stays put at the edge rather than popping in and
-    // out as the cursor wanders back and forth across the boundary.
-    RECT tabClientRect{};
-    GetClientRect(tabHwnd_, &tabClientRect);
-    POINT topLeft{tabClientRect.left, tabClientRect.top};
-    POINT bottomRight{tabClientRect.right, tabClientRect.bottom};
-    ClientToScreen(tabHwnd_, &topLeft);
-    ClientToScreen(tabHwnd_, &bottomRight);
+    // Only a reorder within the tab strip (or, now, a drop onto the other
+    // pane's strip) is meaningful - once the cursor leaves both, a
+    // floating tab snapshot sitting over unrelated UI just reads as a
+    // stray glitch. Clamp the ghost's own position to the union of this
+    // pane's strip and the other pane's strip instead of hiding it, so it
+    // stays put at whichever edge rather than popping in and out as the
+    // cursor wanders back and forth across a boundary.
+    RECT clampRect = tabStripScreenRect();
+    if (otherPane_) {
+        RECT otherRect = otherPane_->tabStripScreenRect();
+        UnionRect(&clampRect, &clampRect, &otherRect);
+    }
+    POINT topLeft{clampRect.left, clampRect.top};
+    POINT bottomRight{clampRect.right, clampRect.bottom};
 
     RECT ghostRect{};
     GetWindowRect(dragGhost_, &ghostRect);
@@ -568,8 +594,17 @@ void FilePane::closeTab(int index) {
     if (tabs_.size() <= 1) return;  // always keep at least one tab
     if (index < 0) index = activeTab_;
     if (index >= static_cast<int>(tabs_.size())) return;
+    removeTab(index);
+}
 
+// Erases tabs_[index] and returns its saved content, fixing up
+// activeTab_/hoveredCloseTab_/layout the same way whether the tab is being
+// discarded (closeTab) or handed off to the other pane
+// (receiveTabFromOtherPane). Caller must ensure tabs_.size() > 1 first -
+// this never leaves a pane with zero tabs.
+FilePane::TabState FilePane::removeTab(int index) {
     const bool closingActive = (index == activeTab_);
+    TabState removed = std::move(tabs_[index]);
     tabs_.erase(tabs_.begin() + index);
     hoveredCloseTab_ = -1;  // indices just shifted; next WM_MOUSEMOVE recomputes this
     relayoutTabs();
@@ -583,6 +618,42 @@ void FilePane::closeTab(int index) {
     }
     InvalidateRect(tabHwnd_, nullptr, TRUE);
     if (onTabCountChanged) onTabCountChanged();
+    return removed;
+}
+
+RECT FilePane::tabStripScreenRect() const {
+    RECT r{};
+    GetClientRect(tabHwnd_, &r);
+    MapWindowPoints(tabHwnd_, nullptr, reinterpret_cast<POINT*>(&r), 2);
+    return r;
+}
+
+int FilePane::hitTestScreenPoint(POINT screenPt) const {
+    POINT client = screenPt;
+    ScreenToClient(tabHwnd_, &client);
+    return hitTestTabApprox(client);
+}
+
+// `source` gives up tabs_[sourceIndex] (its last-remaining tab is refused,
+// same "always keep one tab" rule as closeTab); it's inserted here at
+// atIndex (clamped to a valid position) and made the active tab, matching
+// how a dropped/dragged-in tab reads as "now showing" rather than a silent
+// background addition.
+void FilePane::receiveTabFromOtherPane(FilePane& source, int sourceIndex, int atIndex) {
+    if (&source == this) return;
+    if (sourceIndex < 0 || static_cast<size_t>(sourceIndex) >= source.tabs_.size()) return;
+    if (source.tabs_.size() <= 1) return;
+
+    TabState moved = source.removeTab(sourceIndex);
+
+    if (atIndex < 0 || atIndex > static_cast<int>(tabs_.size())) atIndex = static_cast<int>(tabs_.size());
+    tabs_.insert(tabs_.begin() + atIndex, std::move(moved));
+    hoveredCloseTab_ = -1;
+    relayoutTabs();
+    loadTabIntoLive(atIndex);
+    InvalidateRect(tabHwnd_, nullptr, TRUE);
+    if (onTabCountChanged) onTabCountChanged();
+    if (onNavigated) onNavigated(*this);
 }
 
 std::vector<std::wstring> FilePane::tabPaths() {

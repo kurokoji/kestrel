@@ -86,6 +86,12 @@ public:
     void closeTab(int index = -1);  // -1 = the active tab; a no-op if it's the only one left
     void cycleTab(bool forward);  // Ctrl+Tab / Ctrl+Shift+Tab; wraps, no-op with one tab
 
+    // The other pane, so a tab dragged past this pane's own tab strip can
+    // be dropped onto the other one's. MainWindow wires both directions
+    // right after creating both panes. Never navigated cross-pane other
+    // than through this - the two FilePanes otherwise stay independent.
+    void setOtherPane(FilePane* other) { otherPane_ = other; }
+
     // Session persistence: the paths of every open tab (active tab first
     // synced so its path is current) and which one is active, for saving
     // on exit; and replacing the pane's tabs wholesale with a restored
@@ -269,6 +275,15 @@ private:
     void loadTabIntoLive(int index);
     void switchToTab(int index);
     void moveTab(int from, int to);
+    TabState removeTab(int index);  // precondition: tabs_.size() > 1, index valid; caller checks
+
+    // Cross-pane tab drag (dropping a dragged tab onto the other pane's
+    // strip). tabStripScreenRect()/hitTestScreenPoint() let a pane query
+    // the *other* pane's strip in screen coordinates while a drag is live;
+    // receiveTabFromOtherPane() does the actual hand-off on drop.
+    RECT tabStripScreenRect() const;
+    int hitTestScreenPoint(POINT screenPt) const;  // -1 if not over any tab
+    void receiveTabFromOtherPane(FilePane& source, int sourceIndex, int atIndex);
 
     // Tab strip layout: fixed-width tabs packed left-to-right, wrapping
     // to a new row once they no longer fit (same visual result as the
@@ -311,6 +326,8 @@ private:
     HWND dragGhost_ = nullptr;  // layered popup showing the dragged tab; lazily created on first drag
     HBITMAP dragGhostBitmap_ = nullptr;  // snapshot of the tab at drag start; owned, freed in endTabDrag
     POINT dragGhostOffset_{};  // grab point relative to the tab's own top-left, so the ghost doesn't jump under the cursor
+    FilePane* otherPane_ = nullptr;  // set by MainWindow via setOtherPane(); null in tests/standalone use
+    int crossPaneDropIndex_ = -1;  // -1 = drag isn't over the other pane's strip; else the tab index it'd drop at
     HWND newTabButton_ = nullptr;
     HWND duplicateTabButton_ = nullptr;  // right of newTabButton_; an icon-font glyph, not text
     HWND searchBox_ = nullptr;
