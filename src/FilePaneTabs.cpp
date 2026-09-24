@@ -605,10 +605,10 @@ void FilePane::duplicateTab() {
 }
 
 void FilePane::closeTab(int index) {
-    if (tabs_.size() <= 1) return;  // always keep at least one tab
+    if (tabs_.empty()) return;
     if (index < 0) index = activeTab_;
     if (index >= static_cast<int>(tabs_.size())) return;
-    removeTab(index);
+    removeTab(index);  // fine to take the last tab - see removeTab's empty-tabs_ branch
 }
 
 // Erases tabs_[index] and returns its saved content, fixing up
@@ -789,7 +789,7 @@ void FilePane::drawTabItem(HDC hdc, const RECT& r, int index) {
         FrameRect(hdc, &frame, GetSysColorBrush(COLOR_HIGHLIGHT));
     }
 
-    if (tabs_.size() > 1) {
+    {
         const bool hovered = (index == hoveredCloseTab_);
         if (hovered) {
             RECT hoverRect = closeHoverRectFor(r);

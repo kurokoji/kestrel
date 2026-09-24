@@ -851,20 +851,23 @@ commit - don't let it drift out of sync with what the app actually does.
     control flow against the bug report, plus a clean build +
     `kestrel_tests` pass. Confirm live before trusting this note over a
     fresh bug report.
-- Dragging a pane's *last* tab to the other pane empties that pane on
-  purpose - explicitly requested over refusing the drag (the original
-  behavior, matching closeTab()'s "always keep one tab" rule, which is
-  still enforced for closeTab itself - only this hand-off path allows
-  zero). `FilePane` doesn't need a whole tab to stay on screen: a pane
-  left with zero tabs just shows an empty listing (`FilePane::removeTab`
-  resets `live_` to a blank `TabContent{}`, zeroes the ListView's item
-  count, and recomputes the (now-zero) selection stats) rather than
-  falling back to single-pane mode or auto-refilling a fresh tab - "+" or
-  dragging another tab onto it are how it gets contents again. No
-  MainWindow-side handling needed for this at all (tried an earlier
-  version that detected the zero-tab pane from `onTabCountChanged` and
-  forced `singlePaneMode_` on - scrapped per explicit feedback that a pane
-  need not always hold a tab). One real trap here: `removeTab` computes
+- Dragging a pane's *last* tab to the other pane, or plain closeTab()ing
+  it (× glyph, middle-click, Ctrl+W - closeTab's old "always keep one tab"
+  refusal is gone), can leave a pane with zero tabs, on purpose -
+  explicitly requested over refusing either. `FilePane` doesn't need a
+  tab open to stay on screen: a pane left with zero tabs just shows an
+  empty listing (`FilePane::removeTab` resets `live_` to a blank
+  `TabContent{}`, zeroes the ListView's item count, and recomputes the
+  (now-zero) selection stats) rather than falling back to single-pane
+  mode or auto-refilling a fresh tab - "+" or dragging another tab onto
+  it are how it gets contents again. No MainWindow-side handling needed
+  for this at all (tried an earlier version that detected the zero-tab
+  pane from `onTabCountChanged` and forced `singlePaneMode_` on -
+  scrapped per explicit feedback that a pane need not always hold a tab).
+  The close (×) glyph and its hover highlight used to be skipped entirely
+  when `tabs_.size() <= 1` (`drawTabItem`'s `if (tabs_.size() > 1)`) -
+  that guard is gone too, so a single remaining tab still shows and
+  responds to its own close button. One real trap here: `removeTab` computes
   `loadTabIntoLive`'s target index as `tabs_.size() - 1` when the removed
   tab was active - with `tabs_` now empty that's `-1`, so the empty-listing
   reset path is a genuinely separate branch, not something that could be
