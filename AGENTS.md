@@ -1,4 +1,4 @@
-# Agent notes for Kestrel Filer
+# Agent notes for Kestrel
 
 Working notes for whichever coding agent touches this repo next. This is a
 pure Win32/Common Controls C++23 app (see README.md for the feature/build

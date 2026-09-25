@@ -1,7 +1,7 @@
 <div align="center">
-  <img src="assets/icon_preview.png" width="128" height="128" alt="Kestrel Filer icon">
+  <img src="assets/icon_preview.png" width="128" height="128" alt="Kestrel icon">
 
-  # Kestrel Filer
+  # Kestrel
 
   [![Tests](https://github.com/kurokoji/kestrel/actions/workflows/tests.yml/badge.svg)](https://github.com/kurokoji/kestrel/actions/workflows/tests.yml)
 </div>

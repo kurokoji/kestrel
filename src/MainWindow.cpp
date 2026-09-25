@@ -96,7 +96,7 @@ bool MainWindow::create(HINSTANCE hInstance, int nCmdShow) {
 
     // The guide has its own layered surface; keep native controls out of
     // whole-window composition when committing their new bounds.
-    hwnd_ = CreateWindowExW(0, kClassName, L"Kestrel Filer", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, x, y, w, h, nullptr, nullptr,
+    hwnd_ = CreateWindowExW(0, kClassName, L"Kestrel", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, x, y, w, h, nullptr, nullptr,
                              hInstance, this);
     if (!hwnd_) return false;
 
@@ -1150,7 +1150,7 @@ void MainWindow::onCommand(int id, HWND ctrl) {
             applyDefaultSort(sortColumn_, !sortAscending_);
             break;
         case IDM_HELP_ABOUT:
-            MessageBoxW(hwnd_, L"Kestrel Filer\n軽量な Win32 ファイラーです。", L"Kestrelについて",
+            MessageBoxW(hwnd_, L"Kestrel\n軽量な Win32 ファイラーです。", L"Kestrelについて",
                         MB_OK | MB_ICONINFORMATION);
             break;
         default:
