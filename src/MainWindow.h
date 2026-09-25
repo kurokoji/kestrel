@@ -92,6 +92,7 @@ private:
     std::optional<SessionData> pendingSession_;
 
     HWND toolbar_ = nullptr;
+    HIMAGELIST toolbarImageList_ = nullptr;  // owns the Back/Forward/Up/Refresh icons; rebuilt by createToolbar()
     HWND addressBar_ = nullptr;
     HWND statusBar_ = nullptr;
     std::wstring freeSpaceText_;  // status bar's right part; empty for This PC / Recycle Bin

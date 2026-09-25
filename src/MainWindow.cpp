@@ -19,6 +19,8 @@
 #include <shlobj.h>
 #include <shlwapi.h>
 #include <windowsx.h>
+#include <objidl.h>  // must precede gdiplus.h - see AGENTS.md
+#include <gdiplus.h>
 
 #include <algorithm>
 #include <filesystem>
@@ -42,6 +44,55 @@ LOGFONTW buildLogFont(const std::wstring& family, int pointSize, bool bold, HDC 
     lf.lfHeight = -MulDiv(pointSize, GetDeviceCaps(hdc, LOGPIXELSY), 72);
     lf.lfWeight = bold ? FW_BOLD : FW_NORMAL;
     return lf;
+}
+
+// Toolbar glyphs, from the "Segoe MDL2 Assets" icon font already used
+// elsewhere (see FilePane.cpp's duplicate-tab button) rather than shipping
+// bitmap resources - one fewer file to keep in sync across DPIs.
+constexpr wchar_t kGlyphBack = L'';
+constexpr wchar_t kGlyphForward = L'';
+constexpr wchar_t kGlyphUp = L'';
+constexpr wchar_t kGlyphRefresh = L'';
+
+// Rasterizes one glyph into a square HICON with a real alpha channel.
+// Plain GDI text drawn onto a 32bpp DIB doesn't touch the alpha channel at
+// all (every pixel comes out alpha=0, i.e. invisible once used as an
+// icon) - GDI+ is used instead purely because Graphics::DrawString onto a
+// PixelFormat32bppARGB bitmap correctly anti-aliases into alpha, which is
+// the whole reason this goes through GDI+ rather than plain GDI like most
+// of the rest of this file's drawing.
+HICON glyphToIcon(wchar_t glyph, int sizePx, COLORREF color) {
+    Gdiplus::Bitmap bmp(sizePx, sizePx, PixelFormat32bppARGB);
+    Gdiplus::Graphics g(&bmp);
+    g.SetTextRenderingHint(Gdiplus::TextRenderingHintAntiAliasGridFit);
+    g.Clear(Gdiplus::Color(0, 0, 0, 0));
+
+    Gdiplus::FontFamily family(L"Segoe MDL2 Assets");
+    Gdiplus::Font font(&family, static_cast<Gdiplus::REAL>(sizePx) * 0.72f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+    Gdiplus::SolidBrush brush(Gdiplus::Color(255, GetRValue(color), GetGValue(color), GetBValue(color)));
+    Gdiplus::StringFormat format;
+    format.SetAlignment(Gdiplus::StringAlignmentCenter);
+    format.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+
+    const wchar_t text[2] = {glyph, 0};
+    Gdiplus::RectF rect(0, 0, static_cast<Gdiplus::REAL>(sizePx), static_cast<Gdiplus::REAL>(sizePx));
+    g.DrawString(text, 1, &font, rect, &format, &brush);
+
+    HICON icon = nullptr;
+    bmp.GetHICON(&icon);
+    return icon;
+}
+
+HIMAGELIST buildToolbarImageList(HWND forDpi) {
+    const int sizePx = MulDiv(16, static_cast<int>(GetDpiForWindow(forDpi)), 96);
+    HIMAGELIST himl = ImageList_Create(sizePx, sizePx, ILC_COLOR32 | ILC_MASK, 4, 0);
+    const COLORREF color = GetSysColor(COLOR_BTNTEXT);
+    for (wchar_t glyph : {kGlyphBack, kGlyphForward, kGlyphUp, kGlyphRefresh}) {
+        HICON icon = glyphToIcon(glyph, sizePx, color);
+        ImageList_AddIcon(himl, icon);
+        DestroyIcon(icon);
+    }
+    return himl;
 }
 
 LRESULT CALLBACK AddressBarSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR /*id*/,
@@ -241,6 +292,7 @@ LRESULT MainWindow::wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             RevokeDragDrop(right_.tabHwnd());
             saveSession();
             if (customFont_) DeleteObject(customFont_);
+            if (toolbarImageList_) ImageList_Destroy(toolbarImageList_);
             PostQuitMessage(0);
             return 0;
         default:
@@ -315,18 +367,15 @@ void MainWindow::retranslate() {
     CheckMenuItem(viewMenu_, IDM_VIEW_HIDDEN, MF_BYCOMMAND | (showHidden_ ? MF_CHECKED : MF_UNCHECKED));
     updateUndoMenu();
 
-    auto setButtonText = [&](int cmd, const wchar_t* text) {
-        TBBUTTONINFOW info{};
-        info.cbSize = sizeof(info);
-        info.dwMask = TBIF_TEXT;
-        info.pszText = const_cast<LPWSTR>(text);
-        SendMessageW(toolbar_, TB_SETBUTTONINFOW, cmd, reinterpret_cast<LPARAM>(&info));
-    };
-    setButtonText(IDM_GO_BACK, tr(StringId::ToolbarBack));
-    setButtonText(IDM_GO_FORWARD, tr(StringId::ToolbarForward));
-    setButtonText(IDM_GO_UP, tr(StringId::ToolbarUp));
-    setButtonText(IDM_VIEW_REFRESH, tr(StringId::ToolbarRefresh));
-    setButtonText(IDM_VIEW_SINGLEPANE, tr(StringId::ToolbarSinglePane));
+    // Back/Forward/Up/Refresh have no inline label to update - their
+    // tooltip text comes from tr() live via TBN_GETINFOTIPW (see
+    // onNotify), so there's nothing to push here. singlePane is the only
+    // toolbar button with an actual displayed caption.
+    TBBUTTONINFOW info{};
+    info.cbSize = sizeof(info);
+    info.dwMask = TBIF_TEXT;
+    info.pszText = const_cast<LPWSTR>(tr(StringId::ToolbarSinglePane));
+    SendMessageW(toolbar_, TB_SETBUTTONINFOW, IDM_VIEW_SINGLEPANE, reinterpret_cast<LPARAM>(&info));
     SendMessageW(toolbar_, TB_AUTOSIZE, 0, 0);
 
     left_.retranslate();
@@ -600,28 +649,35 @@ void MainWindow::createMenuBar() {
 
 void MainWindow::createToolbar() {
     // TBSTYLE_LIST puts a button's text next to its icon instead of below
-    // it; since these buttons have no icon (I_IMAGENONE) at all, without
-    // it the control still reserves the icon's height above the text,
-    // which pushes the label down and makes the row look bottom-aligned.
+    // it - singlePane is the only remaining button with a label, and this
+    // keeps it from growing a tall, bottom-aligned look next to its icon-
+    // only siblings.
     toolbar_ = CreateWindowExW(
         0, TOOLBARCLASSNAME, nullptr,
         WS_CHILD | WS_CLIPSIBLINGS | WS_VISIBLE | TBSTYLE_FLAT | TBSTYLE_LIST | TBSTYLE_TOOLTIPS | CCS_NOPARENTALIGN | CCS_NODIVIDER,
         0, 0, 0, 0, hwnd_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_TOOLBAR)), hInstance_, nullptr);
 
     SendMessageW(toolbar_, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
-    // No image list is ever attached (every button uses I_IMAGENONE), but
-    // without telling the control the icon size is 0x0 it still reserves
-    // a default icon-width gutter before the label, leaving the text
-    // looking left-crammed with a lopsided gap after it.
-    SendMessageW(toolbar_, TB_SETBITMAPSIZE, 0, MAKELPARAM(0, 0));
 
-    auto mk = [](int cmd, LPCWSTR text) {
+    // Back/Forward/Up/Refresh get real icons (rasterized from Segoe MDL2
+    // Assets glyphs - see buildToolbarImageList); singlePane stays a text
+    // button since "1 pane"/"1ペイン" has no obvious universal glyph.
+    if (toolbarImageList_) ImageList_Destroy(toolbarImageList_);  // retranslate() rebuilds this at the DPI/size it still has
+    toolbarImageList_ = buildToolbarImageList(hwnd_);
+    SendMessageW(toolbar_, TB_SETIMAGELIST, 0, reinterpret_cast<LPARAM>(toolbarImageList_));
+
+    // No iString here: TBSTYLE_LIST (needed below for singlePane's label
+    // layout) draws a non-empty iString as an inline caption regardless of
+    // BTNS_SHOWTEXT - there's no per-button way to opt out of that once
+    // it's toolbar-wide. Their hover tooltips come from TBN_GETINFOTIPW
+    // instead (see onNotify), computed live via tr() so retranslate()
+    // doesn't need to touch these buttons at all.
+    auto mk = [](int cmd, int imageIndex) {
         TBBUTTON b{};
         b.idCommand = cmd;
         b.fsState = TBSTATE_ENABLED;
-        b.fsStyle = BTNS_AUTOSIZE | BTNS_SHOWTEXT;
-        b.iBitmap = I_IMAGENONE;
-        b.iString = reinterpret_cast<INT_PTR>(text);
+        b.fsStyle = BTNS_AUTOSIZE;
+        b.iBitmap = imageIndex;
         return b;
     };
 
@@ -639,10 +695,10 @@ void MainWindow::createToolbar() {
     singlePane.iString = reinterpret_cast<INT_PTR>(tr(StringId::ToolbarSinglePane));
 
     TBBUTTON buttons[] = {
-        mk(IDM_GO_BACK, tr(StringId::ToolbarBack)),
-        mk(IDM_GO_FORWARD, tr(StringId::ToolbarForward)),
-        mk(IDM_GO_UP, tr(StringId::ToolbarUp)),
-        mk(IDM_VIEW_REFRESH, tr(StringId::ToolbarRefresh)),
+        mk(IDM_GO_BACK, 0),
+        mk(IDM_GO_FORWARD, 1),
+        mk(IDM_GO_UP, 2),
+        mk(IDM_VIEW_REFRESH, 3),
         sep,
         singlePane,
     };
@@ -1235,6 +1291,19 @@ LRESULT MainWindow::onNotify(LPARAM lParam) {
     if (nmhdr->hwndFrom == tree_.hwnd()) return tree_.handleNotify(nmhdr);
     if (nmhdr->hwndFrom == left_.hwnd() || nmhdr->hwndFrom == left_.tabHwnd()) return left_.handleNotify(nmhdr);
     if (nmhdr->hwndFrom == right_.hwnd() || nmhdr->hwndFrom == right_.tabHwnd()) return right_.handleNotify(nmhdr);
+    if (nmhdr->hwndFrom == toolbar_ && nmhdr->code == TBN_GETINFOTIPW) {
+        auto* tip = reinterpret_cast<NMTBGETINFOTIPW*>(lParam);
+        const wchar_t* text = nullptr;
+        switch (tip->iItem) {
+            case IDM_GO_BACK: text = tr(StringId::ToolbarBack); break;
+            case IDM_GO_FORWARD: text = tr(StringId::ToolbarForward); break;
+            case IDM_GO_UP: text = tr(StringId::ToolbarUp); break;
+            case IDM_VIEW_REFRESH: text = tr(StringId::ToolbarRefresh); break;
+            default: break;
+        }
+        if (text) wcsncpy_s(tip->pszText, tip->cchTextMax, text, _TRUNCATE);
+        return 0;
+    }
     return 0;
 }
 

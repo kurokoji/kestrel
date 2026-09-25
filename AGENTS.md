@@ -949,6 +949,38 @@ commit - don't let it drift out of sync with what the app actually does.
   separately from `updateStatusBar()`, since the free-space text is
   cached in `freeSpaceText_` rather than recomputed by
   `updateStatusBar()` itself.
+- **`TBSTYLE_LIST` draws a toolbar button's `iString` as an inline caption
+  even without `BTNS_SHOWTEXT` on that button** - confirmed live
+  (screenshot of a real running instance, not synthetic): setting
+  `TBBUTTON::iString` but leaving `fsStyle` as plain `BTNS_AUTOSIZE`
+  (no `BTNS_SHOWTEXT`) still showed the text next to the icon. There's
+  no per-button way to opt out of this once `TBSTYLE_LIST` is set on the
+  toolbar (needed for the one remaining text button, `singlePane`, to
+  lay out correctly). Fix: don't set `iString` at all for icon-only
+  buttons (`MainWindow::createToolbar`'s `mk()`); supply their hover
+  tooltip text on demand instead by handling `TBN_GETINFOTIPW` in
+  `onNotify()` (`NMTBGETINFOTIPW::iItem` is the button's command id,
+  not an index) and writing into `pszText`/`cchTextMax`. This also means
+  `retranslate()` doesn't need to touch those buttons at all - the
+  tooltip is computed fresh from `tr()` on every hover.
+- Toolbar icons are rasterized at runtime from "Segoe MDL2 Assets" glyph
+  codepoints (Back `U+E72B`, Forward `U+E72A`, Up `U+E74A`, Refresh
+  `U+E72C` - `MainWindow.cpp`'s `kGlyph*` constants) rather than shipping
+  bitmap resources, matching the icon-font approach `FilePane.cpp`
+  already used for the duplicate-tab button. Plain GDI can't produce
+  these as an `HIMAGELIST` entry with real transparency - text drawn by
+  `TextOutW`/`DrawTextW` onto a 32bpp DIB never touches the alpha
+  channel, so every pixel comes out `alpha=0` (invisible) once used as
+  an icon. `Gdiplus::Graphics::DrawString` onto a
+  `PixelFormat32bppARGB` `Gdiplus::Bitmap` does anti-alias correctly
+  into alpha, so glyph rendering goes through GDI+
+  (`MainWindow.cpp`'s `glyphToIcon`) purely for that reason, then
+  `Bitmap::GetHICON` + `ImageList_AddIcon` hand the result to the
+  ordinary (GDI) toolbar. Icon size is DPI-scaled
+  (`MulDiv(16, GetDpiForWindow(hwnd_), 96)`) once at `createToolbar()`
+  time - there's no live-DPI-change handling for these (matches the
+  rest of the app, which doesn't retranslate/redraw the whole UI on a
+  DPI change either).
 - `PreviewPane`'s `detail_` label (e.g. "Folder") is translated only at
   the moment a folder is selected (`tr(StringId::PreviewFolder)`
   assigned once, not re-read at paint time) - switching language while
