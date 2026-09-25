@@ -2,6 +2,7 @@
 #include "ComPtr.h"
 #include "FileClassify.h"
 #include "Formatting.h"
+#include "Strings.h"
 
 #include <objbase.h>
 #include <shellapi.h>
@@ -200,7 +201,7 @@ void PreviewPane::loadFor(const std::wstring& path) {
 
     if (fad.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
         loadIconFallback(path);
-        detail_ = L"フォルダー";
+        detail_ = tr(StringId::PreviewFolder);
         return;
     }
 
@@ -289,7 +290,7 @@ void PreviewPane::paint(HDC hdc, const RECT& client) {
             SetBkMode(hdc, TRANSPARENT);
             SetTextColor(hdc, GetSysColor(COLOR_GRAYTEXT));
             RECT r = client;
-            DrawTextW(hdc, L"プレビューなし", -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            DrawTextW(hdc, tr(StringId::PreviewNone), -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
             SelectObject(hdc, old);
             break;
         }

@@ -1,6 +1,7 @@
 #include "doctest.h"
 
 #include "Formatting.h"
+#include "Language.h"
 
 TEST_CASE("formatSize renders bytes without a decimal point") {
     CHECK(Formatting::formatSize(0) == L"0 B");
@@ -20,5 +21,8 @@ TEST_CASE("formatFileTime returns empty string for a zero FILETIME") {
 }
 
 TEST_CASE("formatFreeSpace shows free and total space the way the drive list does") {
+    setLanguage(Language::Ja);
     CHECK(Formatting::formatFreeSpace(1024ull * 1024 * 1024 * 3 / 2, 1024ull * 1024 * 1024 * 4) == L"1.5 GB 空き / 4.0 GB");
+    setLanguage(Language::En);
+    CHECK(Formatting::formatFreeSpace(1024ull * 1024 * 1024 * 3 / 2, 1024ull * 1024 * 1024 * 4) == L"1.5 GB free / 4.0 GB");
 }

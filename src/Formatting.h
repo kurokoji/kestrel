@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Strings.h"
+
 #include <windows.h>
 #include <format>
 #include <string>
@@ -20,9 +22,12 @@ inline std::wstring formatSize(uint64_t bytes) {
     return std::format(L"{:.1f} {}", value, units[unit]);
 }
 
-// "1.5 GB 空き / 4.0 GB" - the drive list's size column and the status bar.
+// "1.5 GB 空き / 4.0 GB" (English: "1.5 GB free / 4.0 GB") - the drive
+// list's size column and the status bar.
 inline std::wstring formatFreeSpace(uint64_t freeBytes, uint64_t totalBytes) {
-    return std::format(L"{} 空き / {}", formatSize(freeBytes), formatSize(totalBytes));
+    const std::wstring freeText = formatSize(freeBytes);
+    const std::wstring totalText = formatSize(totalBytes);
+    return std::vformat(tr(StringId::FreeSpace), std::make_wformat_args(freeText, totalText));
 }
 
 inline std::wstring formatFileTime(const FILETIME& ft) {

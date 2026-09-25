@@ -873,3 +873,86 @@ commit - don't let it drift out of sync with what the app actually does.
   reset path is a genuinely separate branch, not something that could be
   folded into `loadTabIntoLive` by relaxing its bounds check (it still
   assumes a valid index and always will - every other caller has one).
+
+- **i18n (English/Japanese)**: `StringId` enum (`Strings.h`) + two
+  `constexpr std::array<const wchar_t*, N>` tables (`Strings.cpp`, one per
+  language) indexed positionally by the enum, not a hash/map - StringId is
+  already a dense integer key, so array indexing is both simpler and
+  faster than any keyed lookup would be. Entries are `const wchar_t*` into
+  string-literal storage, not `std::wstring`, specifically so the tables
+  stay `constexpr` (no heap allocation, no per-call construction) even
+  though `tr()` is called from hot paths (ListView owner-draw, menu
+  rebuilds). The two tables are positional arrays rather than
+  designated/keyed initializers, so a missing or extra entry in either one
+  is a `static_assert(kEn.size() == kCount)` compile failure, not a
+  silent runtime bug - this is deliberately relied on instead of a
+  separate "tables in sync" unit test. `Language.h`'s
+  `languageFromLangId(LANGID)` is the only actual detection logic and is
+  pure/unit-tested; `currentLanguage()`/`setLanguage()` are simple global
+  state `Strings.cpp`'s `tr()` reads. Tests that assert on translated
+  text (`UndoTests`, `NamePartsTests`, `FormattingTests`) must call
+  `setLanguage(Language::Ja)` explicitly first - the process-wide current
+  language otherwise starts from a real `GetUserDefaultUILanguage()` call
+  at static-init time, so leaving it implicit would make those tests
+  depend on the machine's OS language.
+- A format string that's itself translated (looked up via `tr()` at
+  runtime) can't go through plain `std::format(tr(...), args...)` -
+  `std::format` requires the format string as a compile-time constant
+  expression (`std::format_string`), and a `const wchar_t*` returned from
+  a function doesn't qualify even though the underlying literal is
+  constexpr. Use `std::vformat(tr(...), std::make_wformat_args(args...))`
+  instead everywhere a translated string has `{}` placeholders. Also:
+  every argument passed to `make_wformat_args` must be an lvalue (a named
+  local), not a temporary - it captures by reference into the
+  `format_args` object, and MSVC's dangling-reference protection rejects
+  an rvalue there (`Undo::describe(kind)`, `Formatting::formatSize(...)`
+  and similar helper calls all had to be hoisted into a named
+  `const std::wstring` first before being handed to
+  `make_wformat_args`/`vformat`).
+- `TB_SETBUTTONTEXTW` does not exist in this SDK's `CommCtrl.h` (looked
+  plausible by analogy with `TB_SETBUTTONINFOW`/other `...W` message
+  pairs, but grepping the actual header turned up nothing under that
+  name in any `_WIN32_IE` gate). To change a toolbar button's text after
+  it's already been added (needed for live language switching), use
+  `TB_SETBUTTONINFOW` with a `TBBUTTONINFOW{ dwMask = TBIF_TEXT, pszText
+  = ... }`, keyed by the button's command id - not by index, so it's
+  unaffected by button order.
+- Retranslating live (Tools > Options > 言語, no restart required) means
+  every place a translatable string was baked in at one-time
+  construction needs its own explicit re-apply path, since Win32 doesn't
+  re-query text on its own: `MainWindow::retranslate()` destroys and
+  fully rebuilds the whole menu bar (simplest correct option - a `HMENU`
+  has no "change this item's text and mnemonic" operation that's less
+  work than just rebuilding, and `createMenuBar()` already existed as a
+  single source of truth for the menu's structure) via `createMenuBar()`
+  itself detecting and `DestroyMenu`-ing the previous one, then
+  re-applies the state that rebuild doesn't know about on its own
+  (`applyDefaultSort` for the fresh `sortMenu_`'s radio marks,
+  `updateUndoMenu` for the Edit menu's dynamic undo label); the toolbar's
+  five button labels via `TB_SETBUTTONINFOW` (see above); each
+  `FilePane`'s `retranslate()` (column headers via `ListView_SetColumn`,
+  the two tab-button tooltips via `TTM_UPDATETIPTEXTW`, the Recycle-Bin
+  empty button via `SetWindowTextW`, plus an `InvalidateRect` on the tab
+  strip so `drawTabItem` recomputes tab labels - those are already
+  translated live at paint time via `NameParts::tabLabel`, so a repaint
+  alone is enough, no stored text to update); `TreePane::retranslate()`
+  walks a small `translatedRoots_` list (`HTREEITEM` + `StringId` pairs
+  recorded when `addRootItems()` created them) and `TreeView_SetItem`s
+  each one - deliberately not "walk the whole tree", since every other
+  node is a real folder name that must never be translated, only the
+  fixed Desktop/Documents/.../Recycle Bin roots are. Forgetting a piece
+  here doesn't show up as a build/test failure - it shows up as some
+  corner of the UI silently staying in the old language after switching,
+  which is how `updateFreeSpace()` got missed on the first pass (caught
+  by an actual screenshot-verified language switch in the running app,
+  not by the test suite) and had to be added to `retranslate()`
+  separately from `updateStatusBar()`, since the free-space text is
+  cached in `freeSpaceText_` rather than recomputed by
+  `updateStatusBar()` itself.
+- `PreviewPane`'s `detail_` label (e.g. "Folder") is translated only at
+  the moment a folder is selected (`tr(StringId::PreviewFolder)`
+  assigned once, not re-read at paint time) - switching language while
+  that exact label is still showing leaves it stale until the next
+  selection change. Deliberately left as a known, low-priority gap
+  rather than adding another retranslate() hook for it; revisit if it's
+  ever reported as user-visible.

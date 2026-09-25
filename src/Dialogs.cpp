@@ -1,4 +1,5 @@
 #include "Dialogs.h"
+#include "Strings.h"
 
 #include <windowsx.h>
 
@@ -44,7 +45,7 @@ LRESULT CALLBACK PromptWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                                        reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_OK)), hInst, nullptr);
             SendMessageW(ok, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
 
-            HWND cancel = CreateWindowExW(0, L"BUTTON", L"キャンセル", WS_CHILD | WS_VISIBLE | WS_TABSTOP, 190, 60, 90,
+            HWND cancel = CreateWindowExW(0, L"BUTTON", tr(StringId::DialogCancel), WS_CHILD | WS_VISIBLE | WS_TABSTOP, 190, 60, 90,
                                            24, hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_CANCEL)), hInst,
                                            nullptr);
             SendMessageW(cancel, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);

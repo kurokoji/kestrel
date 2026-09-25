@@ -8,6 +8,7 @@
 #include "TreePane.h"
 #include "Undo.h"
 #include "WindowLayout.h"
+#include "Language.h"
 
 #include <windows.h>
 #include <optional>
@@ -48,6 +49,11 @@ private:
     void applyFont(const LOGFONTW& lf);
     void applyDefaultSort(int column, bool ascending);
     void applyShowHidden(bool show);
+    // nullopt = follow the OS UI language; otherwise Tools > Options'
+    // override. Rebuilds the menu bar and re-applies every other live UI
+    // string (panes, tree, status bar) without needing a restart.
+    void applyLanguage(std::optional<Language> override);
+    void retranslate();
     LRESULT onNotify(LPARAM lParam);
     void onPaint();
     void onContextMenu(HWND target, int screenX, int screenY);
@@ -108,6 +114,10 @@ private:
 
     HMENU viewMenu_ = nullptr;
     HMENU editMenu_ = nullptr;
+    HMENU langMenu_ = nullptr;
+    // nullopt = auto (follow the OS UI language); Tools > Options can pin
+    // it to one language instead. Persisted in SessionData::languageOverride.
+    std::optional<Language> languageOverride_;
     Undo::Stack undo_{50};
     bool showHidden_ = true;  // mirrors FilePane::setShowHidden for the menu check and the session
 

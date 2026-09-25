@@ -4,6 +4,7 @@
 #include "FileOperations.h"
 #include "IconCache.h"
 #include "Messages.h"
+#include "Strings.h"
 #include "Types.h"
 
 #include <shlobj.h>
@@ -82,6 +83,16 @@ void TreePane::removeIfGone(HTREEITEM item) {
     if (GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES) TreeView_DeleteItem(hwnd_, item);
 }
 
+void TreePane::retranslate() {
+    for (const auto& [item, labelId] : translatedRoots_) {
+        TVITEMW tvi{};
+        tvi.mask = TVIF_TEXT | TVIF_HANDLE;
+        tvi.hItem = item;
+        tvi.pszText = const_cast<wchar_t*>(tr(labelId));
+        TreeView_SetItem(hwnd_, &tvi);
+    }
+}
+
 void TreePane::openItemInNewTab(POINT clientPt) {
     TVHITTESTINFO hit{};
     hit.pt = clientPt;
@@ -148,26 +159,28 @@ HTREEITEM TreePane::addNode(HTREEITEM parent, const std::wstring& text, const st
 
 void TreePane::addRootItems() {
     PWSTR kf = nullptr;
-    auto addKnownFolder = [&](REFKNOWNFOLDERID id, const wchar_t* label) {
+    auto addKnownFolder = [&](REFKNOWNFOLDERID id, StringId labelId) {
         if (SUCCEEDED(SHGetKnownFolderPath(id, 0, nullptr, &kf))) {
-            addNode(nullptr, label, kf, true);
+            HTREEITEM item = addNode(nullptr, tr(labelId), kf, true);
+            translatedRoots_.push_back({item, labelId});
             CoTaskMemFree(kf);
             kf = nullptr;
         }
     };
 
-    addKnownFolder(FOLDERID_Desktop, L"デスクトップ");
-    addKnownFolder(FOLDERID_Profile, L"ユーザープロファイル");
-    addKnownFolder(FOLDERID_Documents, L"ドキュメント");
-    addKnownFolder(FOLDERID_Downloads, L"ダウンロード");
-    addKnownFolder(FOLDERID_Pictures, L"ピクチャ");
-    addKnownFolder(FOLDERID_Music, L"ミュージック");
-    addKnownFolder(FOLDERID_Videos, L"ビデオ");
+    addKnownFolder(FOLDERID_Desktop, StringId::FolderDesktop);
+    addKnownFolder(FOLDERID_Profile, StringId::FolderUserProfile);
+    addKnownFolder(FOLDERID_Documents, StringId::FolderDocuments);
+    addKnownFolder(FOLDERID_Downloads, StringId::FolderDownloads);
+    addKnownFolder(FOLDERID_Pictures, StringId::FolderPictures);
+    addKnownFolder(FOLDERID_Music, StringId::FolderMusic);
+    addKnownFolder(FOLDERID_Videos, StringId::FolderVideos);
 
     // Leaf node (no expand arrow, cChildren=false) - its contents are
     // listed in the file pane like any other navigable node, but aren't a
     // *tree* of subfolders, so there's nothing here to lazily expand.
-    addNode(nullptr, L"ゴミ箱", kRecycleBinPath, false);
+    HTREEITEM recycleBin = addNode(nullptr, tr(StringId::RecycleBin), kRecycleBinPath, false);
+    translatedRoots_.push_back({recycleBin, StringId::RecycleBin});
 
     // cChildren must already claim "has children" here - comctl32 gates
     // TVE_EXPAND on that hint, not just on whether child items actually
@@ -214,7 +227,7 @@ void TreePane::populateChildren(HTREEITEM item) {
     // looking like it did nothing while enumeration runs in the
     // background; handleChildrenResult() removes it once real results
     // (or "no subfolders") arrive.
-    addNode(item, L"読み込み中...", L"", false);
+    addNode(item, tr(StringId::TreeLoading), L"", false);
 
     std::thread(&TreePane::enumerateChildrenWorker, data->path, item, parentWnd_).detach();
 }

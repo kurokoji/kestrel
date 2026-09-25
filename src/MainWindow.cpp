@@ -9,6 +9,8 @@
 #include "Messages.h"
 #include "RecycleBinOps.h"
 #include "Resource.h"
+#include "Strings.h"
+#include "Language.h"
 
 #include <commctrl.h>
 #include <commdlg.h>
@@ -279,6 +281,7 @@ void MainWindow::saveSession() {
     data.defaultSortColumn = sortColumn_;
     data.defaultSortAscending = sortAscending_;
     data.showHidden = showHidden_;
+    data.languageOverride = languageOverride_ ? (*languageOverride_ == Language::Ja ? 1 : 0) : -1;
 
     Session::save(data);
 }
@@ -297,6 +300,41 @@ void MainWindow::applyShowHidden(bool show) {
     showHidden_ = show;
     FilePane::setShowHidden(show);
     CheckMenuItem(viewMenu_, IDM_VIEW_HIDDEN, MF_BYCOMMAND | (show ? MF_CHECKED : MF_UNCHECKED));
+}
+
+void MainWindow::applyLanguage(std::optional<Language> override) {
+    languageOverride_ = override;
+    setLanguage(override.value_or(languageFromLangId(GetUserDefaultUILanguage())));
+    retranslate();
+}
+
+void MainWindow::retranslate() {
+    createMenuBar();  // rebuilds sortMenu_/viewMenu_/editMenu_/langMenu_ too - re-apply their check state below
+    applyDefaultSort(sortColumn_, sortAscending_);
+    CheckMenuItem(viewMenu_, IDM_VIEW_HIDDEN, MF_BYCOMMAND | (showHidden_ ? MF_CHECKED : MF_UNCHECKED));
+    updateUndoMenu();
+
+    auto setButtonText = [&](int cmd, const wchar_t* text) {
+        TBBUTTONINFOW info{};
+        info.cbSize = sizeof(info);
+        info.dwMask = TBIF_TEXT;
+        info.pszText = const_cast<LPWSTR>(text);
+        SendMessageW(toolbar_, TB_SETBUTTONINFOW, cmd, reinterpret_cast<LPARAM>(&info));
+    };
+    setButtonText(IDM_GO_BACK, tr(StringId::ToolbarBack));
+    setButtonText(IDM_GO_FORWARD, tr(StringId::ToolbarForward));
+    setButtonText(IDM_GO_UP, tr(StringId::ToolbarUp));
+    setButtonText(IDM_VIEW_REFRESH, tr(StringId::ToolbarRefresh));
+    setButtonText(IDM_VIEW_SINGLEPANE, tr(StringId::ToolbarSinglePane));
+    SendMessageW(toolbar_, TB_AUTOSIZE, 0, 0);
+
+    left_.retranslate();
+    right_.retranslate();
+    tree_.retranslate();
+    updateFreeSpace();
+    updateStatusBar();
+    layoutChildren();
+    InvalidateRect(hwnd_, nullptr, TRUE);
 }
 
 void MainWindow::chooseFont() {
@@ -355,6 +393,11 @@ void MainWindow::applyFont(const LOGFONTW& lf) {
 }
 
 void MainWindow::onCreate() {
+    if (pendingSession_ && pendingSession_->languageOverride >= 0) {
+        languageOverride_ = pendingSession_->languageOverride == 1 ? Language::Ja : Language::En;
+        setLanguage(*languageOverride_);
+    }
+
     createMenuBar();
     createToolbar();
     createAddressBar();
@@ -471,75 +514,87 @@ void MainWindow::onCreate() {
 }
 
 void MainWindow::createMenuBar() {
+    HMENU oldMenu = GetMenu(hwnd_);
+
     HMENU menuBar = CreateMenu();
 
     HMENU fileMenu = CreatePopupMenu();
-    AppendMenuW(fileMenu, MF_STRING, IDM_FILE_VIEW, L"表示(&V)\tF3");
-    AppendMenuW(fileMenu, MF_STRING, IDM_FILE_EDIT, L"編集(&E)\tF4");
-    AppendMenuW(fileMenu, MF_STRING, IDM_FILE_COPY, L"コピー(&C)\tF5");
-    AppendMenuW(fileMenu, MF_STRING, IDM_FILE_MOVE, L"移動(&M)\tF6");
-    AppendMenuW(fileMenu, MF_STRING, IDM_FILE_MKDIR, L"新しいフォルダー(&F)\tF7");
-    AppendMenuW(fileMenu, MF_STRING, IDM_FILE_DELETE, L"削除(&D)\tF8");
-    AppendMenuW(fileMenu, MF_STRING, IDM_FILE_RENAME, L"名前の変更(&R)\tF2");
-    AppendMenuW(fileMenu, MF_STRING, IDM_FILE_PROPERTIES, L"プロパティ(&P)\tAlt+Enter");
+    AppendMenuW(fileMenu, MF_STRING, IDM_FILE_VIEW, tr(StringId::MenuFileView));
+    AppendMenuW(fileMenu, MF_STRING, IDM_FILE_EDIT, tr(StringId::MenuFileEdit));
+    AppendMenuW(fileMenu, MF_STRING, IDM_FILE_COPY, tr(StringId::MenuFileCopy));
+    AppendMenuW(fileMenu, MF_STRING, IDM_FILE_MOVE, tr(StringId::MenuFileMove));
+    AppendMenuW(fileMenu, MF_STRING, IDM_FILE_MKDIR, tr(StringId::MenuFileMkdir));
+    AppendMenuW(fileMenu, MF_STRING, IDM_FILE_DELETE, tr(StringId::MenuFileDelete));
+    AppendMenuW(fileMenu, MF_STRING, IDM_FILE_RENAME, tr(StringId::MenuFileRename));
+    AppendMenuW(fileMenu, MF_STRING, IDM_FILE_PROPERTIES, tr(StringId::MenuFileProperties));
     AppendMenuW(fileMenu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(fileMenu, MF_STRING, IDM_FILE_EXIT, L"終了(&X)");
+    AppendMenuW(fileMenu, MF_STRING, IDM_FILE_EXIT, tr(StringId::MenuFileExit));
 
     HMENU editMenu = CreatePopupMenu();
     editMenu_ = editMenu;
-    AppendMenuW(editMenu, MF_STRING | MF_GRAYED, IDM_EDIT_UNDO, L"元に戻す(&U)\tCtrl+Z");
+    AppendMenuW(editMenu, MF_STRING | MF_GRAYED, IDM_EDIT_UNDO, tr(StringId::MenuEditUndo));
     AppendMenuW(editMenu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(editMenu, MF_STRING, IDM_EDIT_COPY, L"コピー(&C)\tCtrl+C");
-    AppendMenuW(editMenu, MF_STRING, IDM_EDIT_CUT, L"切り取り(&T)\tCtrl+X");
-    AppendMenuW(editMenu, MF_STRING, IDM_EDIT_PASTE, L"貼り付け(&P)\tCtrl+V");
-    AppendMenuW(editMenu, MF_STRING, IDM_EDIT_SELECTALL, L"すべて選択(&A)\tCtrl+A");
+    AppendMenuW(editMenu, MF_STRING, IDM_EDIT_COPY, tr(StringId::MenuEditCopy));
+    AppendMenuW(editMenu, MF_STRING, IDM_EDIT_CUT, tr(StringId::MenuEditCut));
+    AppendMenuW(editMenu, MF_STRING, IDM_EDIT_PASTE, tr(StringId::MenuEditPaste));
+    AppendMenuW(editMenu, MF_STRING, IDM_EDIT_SELECTALL, tr(StringId::MenuEditSelectAll));
     AppendMenuW(editMenu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(editMenu, MF_STRING, IDM_EDIT_FIND, L"検索(&F)\tCtrl+F");
+    AppendMenuW(editMenu, MF_STRING, IDM_EDIT_FIND, tr(StringId::MenuEditFind));
 
     HMENU viewMenu = CreatePopupMenu();
     viewMenu_ = viewMenu;
-    AppendMenuW(viewMenu, MF_STRING, IDM_VIEW_REFRESH, L"更新(&R)");
-    AppendMenuW(viewMenu, MF_STRING, IDM_VIEW_TREE, L"ツリー(&T)\tCtrl+Shift+T");
-    AppendMenuW(viewMenu, MF_STRING, IDM_VIEW_SINGLEPANE, L"シングルペイン表示(&S)\tCtrl+U");
-    AppendMenuW(viewMenu, MF_STRING, IDM_VIEW_HIDDEN, L"隠しファイル(&H)\tCtrl+H");
+    AppendMenuW(viewMenu, MF_STRING, IDM_VIEW_REFRESH, tr(StringId::MenuViewRefresh));
+    AppendMenuW(viewMenu, MF_STRING, IDM_VIEW_TREE, tr(StringId::MenuViewTree));
+    AppendMenuW(viewMenu, MF_STRING, IDM_VIEW_SINGLEPANE, tr(StringId::MenuViewSinglePane));
+    AppendMenuW(viewMenu, MF_STRING, IDM_VIEW_HIDDEN, tr(StringId::MenuViewHidden));
 
     HMENU goMenu = CreatePopupMenu();
-    AppendMenuW(goMenu, MF_STRING, IDM_GO_BACK, L"戻る(&B)\tAlt+Left");
-    AppendMenuW(goMenu, MF_STRING, IDM_GO_FORWARD, L"進む(&F)\tAlt+Right");
-    AppendMenuW(goMenu, MF_STRING, IDM_GO_UP, L"上へ(&U)\tAlt+Up");
+    AppendMenuW(goMenu, MF_STRING, IDM_GO_BACK, tr(StringId::MenuGoBack));
+    AppendMenuW(goMenu, MF_STRING, IDM_GO_FORWARD, tr(StringId::MenuGoForward));
+    AppendMenuW(goMenu, MF_STRING, IDM_GO_UP, tr(StringId::MenuGoUp));
     AppendMenuW(goMenu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(goMenu, MF_STRING, IDM_TAB_NEW, L"新しいタブ(&N)\tCtrl+T");
-    AppendMenuW(goMenu, MF_STRING, IDM_TAB_DUPLICATE, L"タブを複製(&D)");
-    AppendMenuW(goMenu, MF_STRING, IDM_TAB_CLOSE, L"タブを閉じる(&C)\tCtrl+W");
-    AppendMenuW(goMenu, MF_STRING, IDM_TAB_NEXT, L"次のタブ(&X)\tCtrl+Tab");
-    AppendMenuW(goMenu, MF_STRING, IDM_TAB_PREV, L"前のタブ(&P)\tCtrl+Shift+Tab");
+    AppendMenuW(goMenu, MF_STRING, IDM_TAB_NEW, tr(StringId::MenuTabNew));
+    AppendMenuW(goMenu, MF_STRING, IDM_TAB_DUPLICATE, tr(StringId::MenuTabDuplicate));
+    AppendMenuW(goMenu, MF_STRING, IDM_TAB_CLOSE, tr(StringId::MenuTabClose));
+    AppendMenuW(goMenu, MF_STRING, IDM_TAB_NEXT, tr(StringId::MenuTabNext));
+    AppendMenuW(goMenu, MF_STRING, IDM_TAB_PREV, tr(StringId::MenuTabPrev));
 
     HMENU settingsMenu = CreatePopupMenu();
-    AppendMenuW(settingsMenu, MF_STRING, IDM_TOOLS_FONT, L"フォント(&F)...");
+    AppendMenuW(settingsMenu, MF_STRING, IDM_TOOLS_FONT, tr(StringId::MenuToolsFont));
 
     sortMenu_ = CreatePopupMenu();
-    AppendMenuW(sortMenu_, MF_STRING, IDM_SORT_NAME, L"名前(&N)");
-    AppendMenuW(sortMenu_, MF_STRING, IDM_SORT_TYPE, L"種類(&T)");
-    AppendMenuW(sortMenu_, MF_STRING, IDM_SORT_SIZE, L"サイズ(&S)");
-    AppendMenuW(sortMenu_, MF_STRING, IDM_SORT_MODIFIED, L"更新日時(&M)");
+    AppendMenuW(sortMenu_, MF_STRING, IDM_SORT_NAME, tr(StringId::MenuSortName));
+    AppendMenuW(sortMenu_, MF_STRING, IDM_SORT_TYPE, tr(StringId::MenuSortType));
+    AppendMenuW(sortMenu_, MF_STRING, IDM_SORT_SIZE, tr(StringId::MenuSortSize));
+    AppendMenuW(sortMenu_, MF_STRING, IDM_SORT_MODIFIED, tr(StringId::MenuSortModified));
     AppendMenuW(sortMenu_, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(sortMenu_, MF_STRING, IDM_SORT_DESCENDING, L"降順を既定にする(&D)");
-    AppendMenuW(settingsMenu, MF_POPUP, reinterpret_cast<UINT_PTR>(sortMenu_), L"並び順(既定)(&O)");
+    AppendMenuW(sortMenu_, MF_STRING, IDM_SORT_DESCENDING, tr(StringId::MenuSortDescending));
+    AppendMenuW(settingsMenu, MF_POPUP, reinterpret_cast<UINT_PTR>(sortMenu_), tr(StringId::MenuSettingsSortOrder));
+
+    langMenu_ = CreatePopupMenu();
+    AppendMenuW(langMenu_, MF_STRING, IDM_LANG_AUTO, tr(StringId::MenuLanguageAuto));
+    AppendMenuW(langMenu_, MF_STRING, IDM_LANG_EN, tr(StringId::MenuLanguageEnglish));
+    AppendMenuW(langMenu_, MF_STRING, IDM_LANG_JA, tr(StringId::MenuLanguageJapanese));
+    CheckMenuRadioItem(langMenu_, IDM_LANG_AUTO, IDM_LANG_JA,
+                       languageOverride_ ? (*languageOverride_ == Language::Ja ? IDM_LANG_JA : IDM_LANG_EN) : IDM_LANG_AUTO,
+                       MF_BYCOMMAND);
+    AppendMenuW(settingsMenu, MF_POPUP, reinterpret_cast<UINT_PTR>(langMenu_), tr(StringId::MenuToolsLanguage));
 
     HMENU toolsMenu = CreatePopupMenu();
-    AppendMenuW(toolsMenu, MF_POPUP, reinterpret_cast<UINT_PTR>(settingsMenu), L"設定(&S)");
+    AppendMenuW(toolsMenu, MF_POPUP, reinterpret_cast<UINT_PTR>(settingsMenu), tr(StringId::MenuToolsSettings));
 
     HMENU helpMenu = CreatePopupMenu();
-    AppendMenuW(helpMenu, MF_STRING, IDM_HELP_ABOUT, L"Kestrelについて(&A)...");
+    AppendMenuW(helpMenu, MF_STRING, IDM_HELP_ABOUT, tr(StringId::MenuHelpAbout));
 
-    AppendMenuW(menuBar, MF_POPUP, reinterpret_cast<UINT_PTR>(fileMenu), L"ファイル(&F)");
-    AppendMenuW(menuBar, MF_POPUP, reinterpret_cast<UINT_PTR>(editMenu), L"編集(&E)");
-    AppendMenuW(menuBar, MF_POPUP, reinterpret_cast<UINT_PTR>(viewMenu), L"表示(&V)");
-    AppendMenuW(menuBar, MF_POPUP, reinterpret_cast<UINT_PTR>(goMenu), L"移動(&G)");
-    AppendMenuW(menuBar, MF_POPUP, reinterpret_cast<UINT_PTR>(toolsMenu), L"ツール(&T)");
-    AppendMenuW(menuBar, MF_POPUP, reinterpret_cast<UINT_PTR>(helpMenu), L"ヘルプ(&H)");
+    AppendMenuW(menuBar, MF_POPUP, reinterpret_cast<UINT_PTR>(fileMenu), tr(StringId::MenuBarFile));
+    AppendMenuW(menuBar, MF_POPUP, reinterpret_cast<UINT_PTR>(editMenu), tr(StringId::MenuBarEdit));
+    AppendMenuW(menuBar, MF_POPUP, reinterpret_cast<UINT_PTR>(viewMenu), tr(StringId::MenuBarView));
+    AppendMenuW(menuBar, MF_POPUP, reinterpret_cast<UINT_PTR>(goMenu), tr(StringId::MenuBarGo));
+    AppendMenuW(menuBar, MF_POPUP, reinterpret_cast<UINT_PTR>(toolsMenu), tr(StringId::MenuBarTools));
+    AppendMenuW(menuBar, MF_POPUP, reinterpret_cast<UINT_PTR>(helpMenu), tr(StringId::MenuBarHelp));
 
     SetMenu(hwnd_, menuBar);
+    if (oldMenu) DestroyMenu(oldMenu);  // retranslate() rebuilds the whole bar; the old one leaks otherwise
 }
 
 void MainWindow::createToolbar() {
@@ -580,13 +635,13 @@ void MainWindow::createToolbar() {
     singlePane.fsState = TBSTATE_ENABLED;
     singlePane.fsStyle = BTNS_AUTOSIZE | BTNS_SHOWTEXT | BTNS_CHECK;
     singlePane.iBitmap = I_IMAGENONE;
-    singlePane.iString = reinterpret_cast<INT_PTR>(L"1ペイン");
+    singlePane.iString = reinterpret_cast<INT_PTR>(tr(StringId::ToolbarSinglePane));
 
     TBBUTTON buttons[] = {
-        mk(IDM_GO_BACK, L"戻る"),
-        mk(IDM_GO_FORWARD, L"進む"),
-        mk(IDM_GO_UP, L"上へ"),
-        mk(IDM_VIEW_REFRESH, L"更新"),
+        mk(IDM_GO_BACK, tr(StringId::ToolbarBack)),
+        mk(IDM_GO_FORWARD, tr(StringId::ToolbarForward)),
+        mk(IDM_GO_UP, tr(StringId::ToolbarUp)),
+        mk(IDM_VIEW_REFRESH, tr(StringId::ToolbarRefresh)),
         sep,
         singlePane,
     };
@@ -757,10 +812,11 @@ void MainWindow::updateStatusBar() {
     const auto& s = activePane().stats();
     std::wstring text;
     if (s.selectedCount > 0) {
-        text = std::format(L"{} 個のファイル | {} 個のフォルダー | {} 個選択 | {}", s.fileCount, s.dirCount,
-                            s.selectedCount, Formatting::formatSize(s.selectedSize));
+        const std::wstring selectedSizeText = Formatting::formatSize(s.selectedSize);
+        text = std::vformat(tr(StringId::StatusFilesFoldersSelected),
+                            std::make_wformat_args(s.fileCount, s.dirCount, s.selectedCount, selectedSizeText));
     } else {
-        text = std::format(L"{} 個のファイル | {} 個のフォルダー", s.fileCount, s.dirCount);
+        text = std::vformat(tr(StringId::StatusFilesFolders), std::make_wformat_args(s.fileCount, s.dirCount));
     }
     SendMessageW(statusBar_, SB_SETTEXTW, 0, reinterpret_cast<LPARAM>(text.c_str()));
     SendMessageW(statusBar_, SB_SETTEXTW, 1, reinterpret_cast<LPARAM>(freeSpaceText_.c_str()));
@@ -838,9 +894,9 @@ void MainWindow::undoLast() {
     updateUndoMenu();
     if (!record) return;
     if (!FileOperations::undo(hwnd_, Undo::plan(*record))) {
+        const std::wstring kindName = Undo::describe(record->kind);
         Dialogs::showError(hwnd_, L"Kestrel",
-                           (L"「" + Undo::describe(record->kind) + L"」を元に戻せなかった項目があります。\n"
-                            L"その後に移動・変更・削除された可能性があります。").c_str());
+                           std::vformat(tr(StringId::UndoPartialFailure), std::make_wformat_args(kindName)).c_str());
     }
     left_.refresh();
     right_.refresh();
@@ -848,8 +904,13 @@ void MainWindow::undoLast() {
 
 void MainWindow::updateUndoMenu() {
     const Undo::Record* top = undo_.top();
-    const std::wstring label =
-        top ? L"元に戻す: " + Undo::describe(top->kind) + L"(&U)\tCtrl+Z" : std::wstring(L"元に戻す(&U)\tCtrl+Z");
+    std::wstring label;
+    if (top) {
+        const std::wstring kindName = Undo::describe(top->kind);
+        label = std::vformat(tr(StringId::MenuEditUndoWithTarget), std::make_wformat_args(kindName));
+    } else {
+        label = tr(StringId::MenuEditUndo);
+    }
     ModifyMenuW(editMenu_, IDM_EDIT_UNDO, MF_BYCOMMAND | MF_STRING | (top ? MF_ENABLED : MF_GRAYED), IDM_EDIT_UNDO,
                 label.c_str());
 }
@@ -877,7 +938,7 @@ void MainWindow::onAddressBarEnter() {
                         SHGetPathFromIDListW(pidl, resolved);
         CoTaskMemFree(pidl);
         if (!ok) {
-            Dialogs::showError(hwnd_, L"Kestrel", (L"場所が見つかりません:\n" + path).c_str());
+            Dialogs::showError(hwnd_, L"Kestrel", std::vformat(tr(StringId::ErrorLocationNotFound), std::make_wformat_args(path)).c_str());
             return;
         }
         path = resolved;
@@ -918,7 +979,7 @@ void MainWindow::onTreeContextMenu(int screenX, int screenY) {
     // moving the selection.
     TreeView_SelectDropTarget(tree_.hwnd(), item);
     const auto result = shellMenu_.show(hwnd_, ShellContextMenu::menuForItem(path), screenPt,
-                                        {{IDM_TAB_OPEN_NEW, L"新しいタブで開く(&T)"}});
+                                        {{IDM_TAB_OPEN_NEW, tr(StringId::MenuCtxOpenInNewTab)}});
     TreeView_SelectDropTarget(tree_.hwnd(), nullptr);
 
     if (result.ownCommand == IDM_TAB_OPEN_NEW) {
@@ -970,10 +1031,10 @@ void MainWindow::onContextMenu(HWND target, int screenX, int screenY) {
         std::vector<ShellContextMenu::OwnItem> top;
         const DWORD attrs = paths.size() == 1 ? GetFileAttributesW(paths.front().c_str()) : INVALID_FILE_ATTRIBUTES;
         if (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY)) {
-            top.push_back({IDM_TAB_OPEN_NEW, L"新しいタブで開く(&T)"});
+            top.push_back({IDM_TAB_OPEN_NEW, tr(StringId::MenuCtxOpenInNewTab)});
         }
         const auto result = shellMenu_.show(hwnd_, ShellContextMenu::menuForPaths(hwnd_, paths), screenPt, top,
-                                            {{IDM_FILE_RENAME, L"名前の変更(&M)\tF2"}});
+                                            {{IDM_FILE_RENAME, tr(StringId::MenuCtxRename)}});
         if (result.ownCommand == IDM_TAB_OPEN_NEW) pane->openInBackgroundTab(paths.front());
         else if (result.ownCommand == IDM_FILE_RENAME) pane->doRename();
         else if (result.shellInvoked) pane->refresh();
@@ -985,9 +1046,9 @@ void MainWindow::onContextMenu(HWND target, int screenX, int screenY) {
     // etc. on top of it; those come from its view, not the folder, so ours
     // are prepended here instead.
     const auto result = shellMenu_.show(hwnd_, ShellContextMenu::menuForBackground(pane->currentPath()), screenPt, {
-        {IDM_VIEW_REFRESH, L"最新の情報に更新(&E)"},
-        {IDM_FILE_MKDIR, L"新しいフォルダー(&N)\tF7"},
-        {IDM_EDIT_PASTE, L"貼り付け(&P)\tCtrl+V"},
+        {IDM_VIEW_REFRESH, tr(StringId::MenuCtxRefresh)},
+        {IDM_FILE_MKDIR, tr(StringId::MenuCtxNewFolder)},
+        {IDM_EDIT_PASTE, tr(StringId::MenuEditPaste)},
     });
     if (result.ownCommand) onCommand(static_cast<int>(result.ownCommand), nullptr);
     else if (result.shellInvoked) pane->refresh();
@@ -1149,9 +1210,17 @@ void MainWindow::onCommand(int id, HWND ctrl) {
         case IDM_SORT_DESCENDING:
             applyDefaultSort(sortColumn_, !sortAscending_);
             break;
+        case IDM_LANG_AUTO:
+            applyLanguage(std::nullopt);
+            break;
+        case IDM_LANG_EN:
+            applyLanguage(Language::En);
+            break;
+        case IDM_LANG_JA:
+            applyLanguage(Language::Ja);
+            break;
         case IDM_HELP_ABOUT:
-            MessageBoxW(hwnd_, L"Kestrel\n軽量な Win32 ファイラーです。", L"Kestrelについて",
-                        MB_OK | MB_ICONINFORMATION);
+            MessageBoxW(hwnd_, tr(StringId::AboutBody), tr(StringId::AboutTitle), MB_OK | MB_ICONINFORMATION);
             break;
         default:
             break;

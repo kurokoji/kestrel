@@ -1,4 +1,5 @@
 #include "Undo.h"
+#include "Strings.h"
 
 namespace Undo {
 namespace {
@@ -41,11 +42,11 @@ std::vector<Step> plan(const Record& record) {
 
 std::wstring describe(Kind kind) {
     switch (kind) {
-        case Kind::Rename: return L"名前の変更";
-        case Kind::NewFolder: return L"新しいフォルダー";
-        case Kind::Copy: return L"コピー";
-        case Kind::Move: return L"移動";
-        case Kind::Recycle: return L"削除";
+        case Kind::Rename: return tr(StringId::OpRename);
+        case Kind::NewFolder: return tr(StringId::NewFolderBaseName);
+        case Kind::Copy: return tr(StringId::OpCopy);
+        case Kind::Move: return tr(StringId::OpMove);
+        case Kind::Recycle: return tr(StringId::OpDelete);
     }
     return {};
 }

@@ -39,6 +39,8 @@ add_executable(kestrel WIN32
     src/NameParts.cpp
     src/AddressInput.cpp
     src/Undo.cpp
+    src/Language.cpp
+    src/Strings.cpp
     src/kestrel.rc
 )
 
@@ -48,6 +50,7 @@ target_compile_definitions(kestrel PRIVATE
     WIN32_LEAN_AND_MEAN
     NOMINMAX
     _WIN32_WINNT=0x0A00
+    _WIN32_IE=0x0A00
 )
 
 # Use static CRT so the exe stays close to dependency-free and the redistributable footprint is minimal.
@@ -102,6 +105,10 @@ if(KESTREL_BUILD_TESTS)
         src/AddressInput.cpp
         tests/UndoTests.cpp
         src/Undo.cpp
+        tests/LanguageTests.cpp
+        src/Language.cpp
+        tests/StringsTests.cpp
+        src/Strings.cpp
     )
 
     target_include_directories(kestrel_tests PRIVATE

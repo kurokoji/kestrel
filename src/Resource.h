@@ -42,6 +42,9 @@
 #define IDM_SORT_SIZE              1404
 #define IDM_SORT_MODIFIED          1405
 #define IDM_SORT_DESCENDING        1406
+#define IDM_LANG_AUTO              1407
+#define IDM_LANG_EN                1408
+#define IDM_LANG_JA                1409
 
 #define IDM_HELP_ABOUT             1501
 

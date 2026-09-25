@@ -117,6 +117,13 @@ public:
     static void setShowHidden(bool show) { showHidden_ = show; }
     void reloadAllTabs();
 
+    // Re-applies the current language's text to everything this pane drew
+    // once at create() time and doesn't otherwise recompute per-paint:
+    // column headers, tab-button tooltips, the empty-Recycle-Bin button.
+    // Tab labels themselves (NameParts::tabLabel) are recomputed live by
+    // drawTabItem, so a plain repaint covers those.
+    void retranslate();
+
     // Called by MainWindow once it receives WM_APP_DIR_RESULT addressed to
     // this pane (the pane pointer travels as the message's wParam).
     void handleDirResult(std::unique_ptr<EnumerationResult> result);
@@ -330,6 +337,7 @@ private:
     int crossPaneDropIndex_ = -1;  // -1 = drag isn't over the other pane's strip; else the tab index it'd drop at
     HWND newTabButton_ = nullptr;
     HWND duplicateTabButton_ = nullptr;  // right of newTabButton_; an icon-font glyph, not text
+    HWND tabButtonTooltip_ = nullptr;  // owns newTabButton_/duplicateTabButton_'s tooltip text
     HWND searchBox_ = nullptr;
     // Shown only while currentPath() == kRecycleBinPath - see setBounds().
     HWND emptyRecycleBinButton_ = nullptr;

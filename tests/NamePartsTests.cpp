@@ -2,6 +2,7 @@
 
 #include "NameParts.h"
 #include "Types.h"
+#include "Language.h"
 
 #include <string>
 #include <vector>
@@ -27,9 +28,12 @@ TEST_CASE("uniqueName numbers from (2) like Explorer, case-insensitively") {
 }
 
 TEST_CASE("fallbackTypeName mimics Explorer's text for unregistered types") {
+    setLanguage(Language::Ja);
     CHECK(NameParts::fallbackTypeName(L".abc", false) == L"ABC ファイル");
     CHECK(NameParts::fallbackTypeName(L"", false) == L"ファイル");
     CHECK(NameParts::fallbackTypeName(L"", true) == L"ファイル フォルダー");
+    setLanguage(Language::En);
+    CHECK(NameParts::fallbackTypeName(L".abc", false) == L"ABC File");
 }
 
 TEST_CASE("tabLabel shows a folder's own name") {
@@ -39,6 +43,9 @@ TEST_CASE("tabLabel shows a folder's own name") {
 }
 
 TEST_CASE("tabLabel names the virtual locations instead of showing their CLSID") {
+    setLanguage(Language::Ja);
     CHECK(NameParts::tabLabel(kThisPcPath) == L"PC");
     CHECK(NameParts::tabLabel(kRecycleBinPath) == L"ゴミ箱");
+    setLanguage(Language::En);
+    CHECK(NameParts::tabLabel(kRecycleBinPath) == L"Recycle Bin");
 }

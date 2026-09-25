@@ -1,6 +1,7 @@
 #pragma once
 
 #include "FileDropTarget.h"
+#include "Strings.h"
 
 #include <windows.h>
 #include <commctrl.h>
@@ -55,6 +56,12 @@ public:
     std::wstring pathOf(HTREEITEM item) const;
     void removeIfGone(HTREEITEM item);
 
+    // Re-applies the current language's text to the fixed root labels
+    // (Desktop, Documents, ... Recycle Bin) after Tools > Options changes
+    // the language - everything else in the tree is a real folder name,
+    // which is never translated.
+    void retranslate();
+
 private:
     struct NodeData {
         std::wstring path;
@@ -86,4 +93,8 @@ private:
     // match - paths are Windows-path-case-insensitive, hence lower-casing
     // the key rather than using _wcsicmp per node during a walk.
     std::unordered_map<std::wstring, HTREEITEM> pathIndex_;
+
+    // Root nodes with a translated (not a real-folder-name) label, so
+    // retranslate() knows which items to relabel and with what.
+    std::vector<std::pair<HTREEITEM, StringId>> translatedRoots_;
 };

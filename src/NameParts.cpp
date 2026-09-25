@@ -1,4 +1,5 @@
 #include "NameParts.h"
+#include "Strings.h"
 #include "Types.h"
 
 #include <algorithm>
@@ -30,16 +31,16 @@ std::wstring uniqueName(const std::vector<std::wstring>& existingNames, const st
 }
 
 std::wstring fallbackTypeName(const std::wstring& extension, bool isDirectory) {
-    if (isDirectory) return L"ファイル フォルダー";
-    if (extension.size() <= 1) return L"ファイル";
+    if (isDirectory) return tr(StringId::TypeFileFolder);
+    if (extension.size() <= 1) return tr(StringId::TypeFile);
     std::wstring upper = extension.substr(1);  // without the leading dot
     std::ranges::transform(upper, upper.begin(), ::towupper);
-    return upper + L" ファイル";
+    return std::vformat(tr(StringId::TypeFileWithExtension), std::make_wformat_args(upper));
 }
 
 std::wstring tabLabel(const std::wstring& path) {
     if (path == kThisPcPath) return L"PC";
-    if (path == kRecycleBinPath) return L"ゴミ箱";
+    if (path == kRecycleBinPath) return tr(StringId::RecycleBin);
     const size_t slash = path.find_last_of(L'\\');
     std::wstring name = (slash == std::wstring::npos) ? path : path.substr(slash + 1);
     return name.empty() ? path : name;  // e.g. "C:\" has nothing after its trailing slash

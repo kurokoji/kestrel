@@ -1,6 +1,7 @@
 #include "doctest.h"
 
 #include "Undo.h"
+#include "Language.h"
 
 using Undo::Kind;
 using Undo::Record;
@@ -50,8 +51,12 @@ TEST_CASE("undoing a delete restores the recycled items") {
 }
 
 TEST_CASE("describe names the operation for the Edit menu") {
+    setLanguage(Language::Ja);
     CHECK(Undo::describe(Kind::Rename) == L"名前の変更");
     CHECK(Undo::describe(Kind::Recycle) == L"削除");
+    setLanguage(Language::En);
+    CHECK(Undo::describe(Kind::Rename) == L"Rename");
+    CHECK(Undo::describe(Kind::Recycle) == L"Delete");
 }
 
 TEST_CASE("Stack pops the most recent record first and drops the oldest past its limit") {

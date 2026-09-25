@@ -32,6 +32,7 @@ TEST_CASE("serialize then parseContent round-trips a full SessionData") {
     data.defaultSortColumn = 3;
     data.defaultSortAscending = false;
     data.showHidden = false;
+    data.languageOverride = 1;
 
     const std::wstring serialized = SessionFormat::serialize(data);
     const SessionData parsed = SessionFormat::parseContent(serialized);
@@ -58,6 +59,12 @@ TEST_CASE("serialize then parseContent round-trips a full SessionData") {
     CHECK(parsed.defaultSortColumn == 3);
     CHECK(parsed.defaultSortAscending == false);
     CHECK(parsed.showHidden == false);
+    CHECK(parsed.languageOverride == 1);
+}
+
+TEST_CASE("parseContent falls back to auto language when absent") {
+    const SessionData data = SessionFormat::parseContent(L"T\t0\tC:\\ok\n");
+    CHECK(data.languageOverride == -1);
 }
 
 TEST_CASE("parseContent shows hidden files when the setting is absent (the old behavior)") {

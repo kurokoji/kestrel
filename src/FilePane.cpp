@@ -9,6 +9,7 @@
 #include "NameParts.h"
 #include "ShellSelection.h"
 #include "RecycleBinOps.h"
+#include "Strings.h"
 
 #include <shlobj.h>
 #include <windowsx.h>
@@ -17,6 +18,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <format>
 
 namespace {
 
@@ -121,8 +123,9 @@ bool FilePane::create(HWND parent, HINSTANCE hInstance, int controlId, int paneI
         info.lpszText = const_cast<LPWSTR>(text);
         SendMessageW(tooltip, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&info));
     };
-    addTip(newTabButton_, L"新しいタブ (Ctrl+T)");
-    addTip(duplicateTabButton_, L"タブを複製");
+    tabButtonTooltip_ = tooltip;
+    addTip(newTabButton_, tr(StringId::TipNewTab));
+    addTip(duplicateTabButton_, tr(StringId::TipDuplicateTab));
 
     // Hidden until Ctrl+F; setBounds() only reserves a row for it while
     // searchVisible_ is true.
@@ -133,7 +136,7 @@ bool FilePane::create(HWND parent, HINSTANCE hInstance, int controlId, int paneI
 
     // Hidden outside the Recycle Bin view; setBounds() shows/positions it
     // based on currentPath().
-    emptyRecycleBinButton_ = CreateWindowExW(0, L"BUTTON", L"ゴミ箱を空にする(&E)",
+    emptyRecycleBinButton_ = CreateWindowExW(0, L"BUTTON", tr(StringId::ButtonEmptyRecycleBin),
                                               WS_CHILD | WS_CLIPSIBLINGS | BS_PUSHBUTTON, 0, 0, 0, 0, parent,
                                               nullptr, hInstance, nullptr);
     SendMessageW(emptyRecycleBinButton_, WM_SETFONT, reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)), TRUE);
@@ -160,14 +163,14 @@ bool FilePane::create(HWND parent, HINSTANCE hInstance, int controlId, int paneI
         ListView_SetImageList(hwnd_, himl, LVSIL_SMALL);
     }
 
-    struct ColSpec { const wchar_t* text; int width; };
+    struct ColSpec { StringId text; int width; };
     static constexpr ColSpec cols[] = {
-        {L"名前", 220}, {L"種類", 120}, {L"サイズ", 80}, {L"更新日時", 130},
+        {StringId::ColumnName, 220}, {StringId::ColumnType, 120}, {StringId::ColumnSize, 80}, {StringId::ColumnModified, 130},
     };
     for (int i = 0; i < 4; ++i) {
         LVCOLUMNW col{};
         col.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
-        col.pszText = const_cast<LPWSTR>(cols[i].text);
+        col.pszText = const_cast<LPWSTR>(tr(cols[i].text));
         col.cx = cols[i].width;
         col.iSubItem = i;
         ListView_InsertColumn(hwnd_, i, &col);
@@ -193,6 +196,34 @@ bool FilePane::create(HWND parent, HINSTANCE hInstance, int controlId, int paneI
     SetWindowSubclass(hwnd_, ListMiddleClickSubclassProc, 2, reinterpret_cast<DWORD_PTR>(this));
 
     return true;
+}
+
+void FilePane::retranslate() {
+    for (int i = 0; i < 4; ++i) {
+        static constexpr StringId kColumnIds[] = {StringId::ColumnName, StringId::ColumnType, StringId::ColumnSize,
+                                                    StringId::ColumnModified};
+        LVCOLUMNW col{};
+        col.mask = LVCF_TEXT;
+        col.pszText = const_cast<LPWSTR>(tr(kColumnIds[i]));
+        ListView_SetColumn(hwnd_, i, &col);
+    }
+
+    if (tabButtonTooltip_) {
+        auto setTip = [&](HWND button, const wchar_t* text) {
+            TTTOOLINFOW info{};
+            info.cbSize = sizeof(info);
+            info.uFlags = TTF_IDISHWND;
+            info.hwnd = GetParent(button);
+            info.uId = reinterpret_cast<UINT_PTR>(button);
+            info.lpszText = const_cast<LPWSTR>(text);
+            SendMessageW(tabButtonTooltip_, TTM_UPDATETIPTEXTW, 0, reinterpret_cast<LPARAM>(&info));
+        };
+        setTip(newTabButton_, tr(StringId::TipNewTab));
+        setTip(duplicateTabButton_, tr(StringId::TipDuplicateTab));
+    }
+
+    SetWindowTextW(emptyRecycleBinButton_, tr(StringId::ButtonEmptyRecycleBin));
+    InvalidateRect(tabHwnd_, nullptr, TRUE);
 }
 
 void FilePane::setBounds(const RECT& outer) {
@@ -269,7 +300,7 @@ void FilePane::handleDirResult(std::unique_ptr<EnumerationResult> result) {
     if (result->requestId != pendingRequestId_) return;  // superseded by a newer navigation
 
     if (!result->success) {
-        std::wstring msg = L"アクセスできません:\n" + result->path;
+        std::wstring msg = std::vformat(tr(StringId::ErrorAccessDenied), std::make_wformat_args(result->path));
         Dialogs::showError(parentWnd_, L"Kestrel", msg.c_str());
         return;
     }
@@ -479,7 +510,7 @@ void FilePane::doMkdir() {
     std::vector<std::wstring> names;
     names.reserve(live_.entries.size());
     for (const auto& e : live_.entries) names.push_back(e.name);
-    std::wstring name = NameParts::uniqueName(names, L"新しいフォルダー");
+    std::wstring name = NameParts::uniqueName(names, tr(StringId::NewFolderBaseName));
     Undo::Record record{Undo::Kind::NewFolder, {}};
     const bool created = FileOperations::createDirectory(parentWnd_, live_.path, name, &record);
     if (onUndoable) onUndoable(std::move(record));

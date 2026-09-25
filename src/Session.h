@@ -50,6 +50,11 @@ struct SessionData {
     // View > 隠しファイル. On by default: hidden files were always listed
     // before this setting existed.
     bool showHidden = true;
+
+    // Tools > Options > 言語. -1 = follow the OS UI language (the
+    // default before this setting existed and whenever "Auto" is picked);
+    // 0 = English; 1 = Japanese.
+    int languageOverride = -1;
 };
 
 namespace Session {
