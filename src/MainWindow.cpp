@@ -11,6 +11,7 @@
 #include "Resource.h"
 #include "Strings.h"
 #include "Language.h"
+#include "Version.h"
 
 #include <commctrl.h>
 #include <commdlg.h>
@@ -1220,7 +1221,9 @@ void MainWindow::onCommand(int id, HWND ctrl) {
             applyLanguage(Language::Ja);
             break;
         case IDM_HELP_ABOUT:
-            MessageBoxW(hwnd_, tr(StringId::AboutBody), tr(StringId::AboutTitle), MB_OK | MB_ICONINFORMATION);
+            MessageBoxW(hwnd_,
+                        std::vformat(tr(StringId::AboutBody), std::make_wformat_args(KESTREL_VERSION_STRING_W)).c_str(),
+                        tr(StringId::AboutTitle), MB_OK | MB_ICONINFORMATION);
             break;
         default:
             break;

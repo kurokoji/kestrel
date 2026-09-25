@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <!-- Keep in sync with src/Version.h and the matching git tag by hand -
+       this file isn't preprocessed, so it can't share that header's macros. -->
   <assemblyIdentity
       type="win32"
       name="kestrel.filer"

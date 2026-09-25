@@ -83,7 +83,7 @@ enum class StringId {
     ToolbarRefresh,
 
     AboutTitle,
-    AboutBody,
+    AboutBody,  // "{}" = version string
 
     StatusFilesFoldersSelected,  // "{} {} {} {}" = fileCount, dirCount, selectedCount, selectedSize
     StatusFilesFolders,          // "{} {}" = fileCount, dirCount

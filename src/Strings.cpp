@@ -77,7 +77,7 @@ constexpr std::array<const wchar_t*, kCount> kEn = {
     L"Refresh",                      // ToolbarRefresh
 
     L"About Kestrel",                                   // AboutTitle
-    L"Kestrel\nA lightweight Win32 file manager.",       // AboutBody
+    L"Kestrel {}\nA lightweight Win32 file manager.",     // AboutBody
 
     L"{} files | {} folders | {} selected | {}",  // StatusFilesFoldersSelected
     L"{} files | {} folders",                      // StatusFilesFolders
@@ -191,7 +191,7 @@ constexpr std::array<const wchar_t*, kCount> kJa = {
     L"更新",                          // ToolbarRefresh
 
     L"Kestrelについて",                                    // AboutTitle
-    L"Kestrel\n軽量な Win32 ファイラーです。",              // AboutBody
+    L"Kestrel {}\n軽量な Win32 ファイラーです。",           // AboutBody
 
     L"{} 個のファイル | {} 個のフォルダー | {} 個選択 | {}",  // StatusFilesFoldersSelected
     L"{} 個のファイル | {} 個のフォルダー",                   // StatusFilesFolders

@@ -1,7 +1,36 @@
 #include "Resource.h"
+#include "Version.h"
 #include <winresrc.h>
 
 IDI_APPICON ICON "kestrel.ico"
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION KESTREL_VERSION_MAJOR,KESTREL_VERSION_MINOR,KESTREL_VERSION_PATCH,0
+ PRODUCTVERSION KESTREL_VERSION_MAJOR,KESTREL_VERSION_MINOR,KESTREL_VERSION_PATCH,0
+ FILEFLAGSMASK 0x3fL
+ FILEFLAGS 0x0L
+ FILEOS 0x40004L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "CompanyName", "Kestrel"
+            VALUE "FileDescription", "Kestrel"
+            VALUE "FileVersion", KESTREL_VERSION_STRING
+            VALUE "InternalName", "kestrel"
+            VALUE "OriginalFilename", "kestrel.exe"
+            VALUE "ProductName", "Kestrel"
+            VALUE "ProductVersion", KESTREL_VERSION_STRING
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
 
 IDA_MAIN ACCELERATORS
 BEGIN
