@@ -724,7 +724,25 @@ LRESULT FilePane::handleNotify(NMHDR* nmhdr) {
                 live_.sortColumn = nmlv->iSubItem;
                 live_.sortAscending = true;
             }
+            // Row indices change with the sort, so carry selection/focus
+            // over by name (same approach as a same-folder refresh).
+            const std::vector<std::wstring> keepSelected = selectedNames();
+            std::wstring keepFocused;
+            if (const int f = ListView_GetNextItem(hwnd_, -1, LVNI_FOCUSED); f >= 0 && static_cast<size_t>(f) < live_.entries.size()) {
+                keepFocused = live_.entries[f].name;
+            }
+            ListView_SetItemState(hwnd_, -1, 0, LVIS_SELECTED | LVIS_FOCUSED);
             sortEntries();
+            for (int idx : FileEntrySort::indicesOfNames(live_.entries, keepSelected)) {
+                ListView_SetItemState(hwnd_, idx, LVIS_SELECTED, LVIS_SELECTED);
+            }
+            if (!keepFocused.empty()) {
+                for (int idx : FileEntrySort::indicesOfNames(live_.entries, {keepFocused})) {
+                    ListView_SetItemState(hwnd_, idx, LVIS_FOCUSED, LVIS_FOCUSED);
+                    ListView_EnsureVisible(hwnd_, idx, FALSE);
+                }
+            }
+            recomputeSelectionStats();
             InvalidateRect(hwnd_, nullptr, FALSE);
             return 0;
         }
