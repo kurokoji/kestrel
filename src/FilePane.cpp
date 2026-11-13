@@ -31,7 +31,7 @@ std::wstring lowercaseCopy(std::wstring s) {
 }
 
 constexpr int kTabStripHeight = 22;
-constexpr COLORREF kRecentFileText = RGB(100, 44, 145);
+constexpr COLORREF kRecentFileText = RGB(180, 24, 24);
 
 // Escape closes the search box (and clears the highlight); Enter jumps to
 // the first match. Plain Edit controls don't surface either as a
