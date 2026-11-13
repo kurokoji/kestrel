@@ -242,6 +242,8 @@ void DirectoryModel::run(std::stop_token stopToken, std::wstring path, HWND noti
         std::ranges::transform(entry.lowercaseName, entry.lowercaseName.begin(), ::towlower);
         entry.attributes = findData.dwFileAttributes;
         entry.modified = findData.ftLastWriteTime;
+        entry.created = (uint64_t{findData.ftCreationTime.dwHighDateTime} << 32) |
+                         findData.ftCreationTime.dwLowDateTime;
         if (!entry.isDirectory()) {
             entry.size = (static_cast<uint64_t>(findData.nFileSizeHigh) << 32) | findData.nFileSizeLow;
             if (const size_t dot = entry.name.find_last_of(L'.');

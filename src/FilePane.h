@@ -347,6 +347,7 @@ private:
     std::wstring pendingRenameDir_;   // folder doMkdir() created pendingRenameName_ in
     std::wstring pendingRenameName_;  // empty = no rename waiting for the next listing
     int dropHighlightIndex_ = -1;  // folder row under an incoming drag; custom-drawn like currentMatchIndex_
+    uint64_t drawTime_ = 0;  // one UTC timestamp for the whole custom draw pass
     HWND parentWnd_ = nullptr;
     int paneId_ = 0;
 

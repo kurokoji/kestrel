@@ -86,6 +86,7 @@ if(KESTREL_BUILD_TESTS)
         tests/LayoutTests.cpp
         tests/test_main.cpp
         tests/FormattingTests.cpp
+        tests/RecentFilesTests.cpp
         tests/FileEntrySortTests.cpp
         src/FileEntrySort.cpp
         tests/FileClassifyTests.cpp

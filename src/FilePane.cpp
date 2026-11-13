@@ -1,4 +1,5 @@
 #include "FilePane.h"
+#include "RecentFiles.h"
 #include "WindowPlacement.h"
 #include "Dialogs.h"
 #include "DropTargetPath.h"
@@ -30,6 +31,7 @@ std::wstring lowercaseCopy(std::wstring s) {
 }
 
 constexpr int kTabStripHeight = 22;
+constexpr COLORREF kRecentFileBackground = RGB(219, 246, 225);
 
 // Escape closes the search box (and clears the highlight); Enter jumps to
 // the first match. Plain Edit controls don't surface either as a
@@ -838,10 +840,12 @@ LRESULT FilePane::handleNotify(NMHDR* nmhdr) {
         case NM_CUSTOMDRAW: {
             auto* cd = reinterpret_cast<NMLVCUSTOMDRAW*>(nmhdr);
             switch (cd->nmcd.dwDrawStage) {
-                case CDDS_PREPAINT:
-                    return (searchQuery_.empty() && currentMatchIndex_ < 0 && cutPaths_.empty() && dropHighlightIndex_ < 0)
-                               ? CDRF_DODEFAULT
-                               : CDRF_NOTIFYITEMDRAW;
+                case CDDS_PREPAINT: {
+                    FILETIME now{};
+                    GetSystemTimeAsFileTime(&now);
+                    drawTime_ = (uint64_t{now.dwHighDateTime} << 32) | now.dwLowDateTime;
+                    return CDRF_NOTIFYITEMDRAW;
+                }
                 case CDDS_ITEMPREPAINT: {
                     const int idx = static_cast<int>(cd->nmcd.dwItemSpec);
                     if (idx == currentMatchIndex_ || idx == dropHighlightIndex_) {
@@ -853,6 +857,13 @@ LRESULT FilePane::handleNotify(NMHDR* nmhdr) {
                         cd->clrText = GetSysColor(COLOR_HIGHLIGHTTEXT);
                     } else if (idx >= 0 && static_cast<size_t>(idx) < live_.entries.size() && matchesSearch(live_.entries[idx])) {
                         cd->clrTextBk = RGB(255, 244, 160);  // pale yellow, like a highlighter
+                    } else if (idx >= 0 && static_cast<size_t>(idx) < live_.entries.size()) {
+                        const auto& entry = live_.entries[idx];
+                        if (RecentFiles::isRecent(entry.created, drawTime_, entry.isDirectory()) &&
+                            !(ListView_GetItemState(hwnd_, idx, LVIS_SELECTED) & LVIS_SELECTED)) {
+                            cd->clrTextBk = kRecentFileBackground;
+                            cd->clrText = RGB(24, 54, 31);
+                        }
                     }
                     if (idx >= 0 && static_cast<size_t>(idx) < live_.entries.size() && !cutPaths_.empty()) {
                         const std::wstring full = lowercaseCopy(joinPath(live_.path, live_.entries[idx].name));
@@ -882,6 +893,8 @@ LRESULT FilePane::handleNotify(NMHDR* nmhdr) {
                         const COLORREF bg = (idx == currentMatchIndex_ || idx == dropHighlightIndex_ || selected)
                                                  ? GetSysColor(COLOR_HIGHLIGHT)
                                              : isMatch                              ? RGB(255, 244, 160)
+                                             : RecentFiles::isRecent(e.created, drawTime_, e.isDirectory())
+                                                                                    ? kRecentFileBackground
                                                                                     : GetSysColor(COLOR_WINDOW);
                         HBRUSH bgBrush = CreateSolidBrush(bg);
                         FillRect(cd->nmcd.hdc, &iconRect, bgBrush);

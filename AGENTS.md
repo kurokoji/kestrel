@@ -369,6 +369,12 @@ commit - don't let it drift out of sync with what the app actually does.
 
 ## Design decisions worth preserving
 
+- Recent-file highlighting uses the filesystem creation time, not last-write
+  time. Compare UTC FILETIME ticks once per visible row against a timestamp
+  sampled once per paint; unknown/future dates and directories do not qualify.
+  The minute timer only repaints the lists so highlights expire without
+  re-enumerating folders.
+
 - Splitter drags preview only a dotted, owned layered popup overlay
   above the panes; do not call layoutChildren or modify saved widths on
   WM_MOUSEMOVE. The user explicitly chose deferred resize to avoid paint

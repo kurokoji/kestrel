@@ -34,6 +34,7 @@ struct FileEntry {
     std::wstring extension;  // lower-cased, includes leading dot; empty for directories
     uint64_t size = 0;       // 0 for directories
     FILETIME modified{};
+    uint64_t created = 0;    // UTC FILETIME ticks; 0 when unavailable
     DWORD attributes = 0;
     int iconIndex = -1;      // resolved lazily, cached by IconCache
 

@@ -177,6 +177,7 @@ LRESULT MainWindow::wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
         case WM_CREATE:
             onCreate();
+            SetTimer(hwnd, 3, 60'000, nullptr);  // Refresh recent-file highlighting.
             return 0;
         case WM_CANCELMODE:
         case WM_CAPTURECHANGED:
@@ -249,6 +250,9 @@ LRESULT MainWindow::wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             } else if (wParam == 2) {
                 KillTimer(hwnd_, 2);
                 right_.refresh();
+            } else if (wParam == 3) {
+                if (IsWindowVisible(left_.hwnd())) InvalidateRect(left_.hwnd(), nullptr, FALSE);
+                if (IsWindowVisible(right_.hwnd())) InvalidateRect(right_.hwnd(), nullptr, FALSE);
             }
             return 0;
         }
