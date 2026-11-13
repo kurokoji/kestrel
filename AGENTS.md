@@ -374,6 +374,8 @@ commit - don't let it drift out of sync with what the app actually does.
   sampled once per paint; unknown/future dates and directories do not qualify.
   The minute timer only repaints the lists so highlights expire without
   re-enumerating folders.
+  Use green text so it can coexist with the yellow search background;
+  selection and drop-target colors still take priority.
 
 - Splitter drags preview only a dotted, owned layered popup overlay
   above the panes; do not call layoutChildren or modify saved widths on

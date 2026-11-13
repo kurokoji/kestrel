@@ -31,7 +31,7 @@ std::wstring lowercaseCopy(std::wstring s) {
 }
 
 constexpr int kTabStripHeight = 22;
-constexpr COLORREF kRecentFileBackground = RGB(219, 246, 225);
+constexpr COLORREF kRecentFileText = RGB(0, 112, 58);
 
 // Escape closes the search box (and clears the highlight); Enter jumps to
 // the first match. Plain Edit controls don't surface either as a
@@ -855,14 +855,12 @@ LRESULT FilePane::handleNotify(NMHDR* nmhdr) {
                         // search box, not the list.
                         cd->clrTextBk = GetSysColor(COLOR_HIGHLIGHT);
                         cd->clrText = GetSysColor(COLOR_HIGHLIGHTTEXT);
-                    } else if (idx >= 0 && static_cast<size_t>(idx) < live_.entries.size() && matchesSearch(live_.entries[idx])) {
-                        cd->clrTextBk = RGB(255, 244, 160);  // pale yellow, like a highlighter
                     } else if (idx >= 0 && static_cast<size_t>(idx) < live_.entries.size()) {
                         const auto& entry = live_.entries[idx];
+                        if (matchesSearch(entry)) cd->clrTextBk = RGB(255, 244, 160);
                         if (RecentFiles::isRecent(entry.created, drawTime_, entry.isDirectory()) &&
                             !(ListView_GetItemState(hwnd_, idx, LVIS_SELECTED) & LVIS_SELECTED)) {
-                            cd->clrTextBk = kRecentFileBackground;
-                            cd->clrText = RGB(24, 54, 31);
+                            cd->clrText = kRecentFileText;
                         }
                     }
                     if (idx >= 0 && static_cast<size_t>(idx) < live_.entries.size() && !cutPaths_.empty()) {
@@ -893,8 +891,6 @@ LRESULT FilePane::handleNotify(NMHDR* nmhdr) {
                         const COLORREF bg = (idx == currentMatchIndex_ || idx == dropHighlightIndex_ || selected)
                                                  ? GetSysColor(COLOR_HIGHLIGHT)
                                              : isMatch                              ? RGB(255, 244, 160)
-                                             : RecentFiles::isRecent(e.created, drawTime_, e.isDirectory())
-                                                                                    ? kRecentFileBackground
                                                                                     : GetSysColor(COLOR_WINDOW);
                         HBRUSH bgBrush = CreateSolidBrush(bg);
                         FillRect(cd->nmcd.hdc, &iconRect, bgBrush);
