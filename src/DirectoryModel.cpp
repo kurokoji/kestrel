@@ -61,15 +61,14 @@ DirectoryModel::~DirectoryModel() {
 }
 
 void DirectoryModel::cancel() {
-    if (worker_.joinable()) {
-        worker_.request_stop();
-    }
+    worker_.cancel();
 }
 
 uint64_t DirectoryModel::requestEnumeration(std::wstring path, HWND notifyWnd, WPARAM token) {
     const uint64_t requestId = nextRequestId_.fetch_add(1, std::memory_order_relaxed);
-    // Assigning a new jthread requests-stop + joins the previous one first.
-    worker_ = std::jthread(run, std::move(path), notifyWnd, token, requestId);
+    worker_.submit([path = std::move(path), notifyWnd, token, requestId](std::stop_token stop) mutable {
+        run(stop, std::move(path), notifyWnd, token, requestId);
+    });
     return requestId;
 }
 
@@ -78,6 +77,13 @@ void DirectoryModel::run(std::stop_token stopToken, std::wstring path, HWND noti
     auto result = std::make_unique<EnumerationResult>();
     result->requestId = requestId;
     result->path = path;
+
+    auto publish = [&] {
+        if (!stopToken.stop_requested() &&
+            PostMessageW(notifyWnd, WM_APP_DIR_RESULT, token, reinterpret_cast<LPARAM>(result.get()))) {
+            result.release();
+        }
+    };
 
     if (path == kRecycleBinPath) {
         // IShellFolder needs COM on this thread - plain FindFirstFileExW
@@ -175,7 +181,7 @@ void DirectoryModel::run(std::stop_token stopToken, std::wstring path, HWND noti
 
         CoUninitialize();
         result->success = true;
-        PostMessageW(notifyWnd, WM_APP_DIR_RESULT, token, reinterpret_cast<LPARAM>(result.release()));
+        publish();
         return;
     }
 
@@ -210,7 +216,7 @@ void DirectoryModel::run(std::stop_token stopToken, std::wstring path, HWND noti
             if (stopToken.stop_requested()) return;
         }
         result->success = true;
-        PostMessageW(notifyWnd, WM_APP_DIR_RESULT, token, reinterpret_cast<LPARAM>(result.release()));
+        publish();
         return;
     }
 
@@ -226,7 +232,7 @@ void DirectoryModel::run(std::stop_token stopToken, std::wstring path, HWND noti
     if (hFind == INVALID_HANDLE_VALUE) {
         result->success = false;
         result->errorCode = GetLastError();
-        PostMessageW(notifyWnd, WM_APP_DIR_RESULT, token, reinterpret_cast<LPARAM>(result.release()));
+        publish();
         return;
     }
 
@@ -257,13 +263,7 @@ void DirectoryModel::run(std::stop_token stopToken, std::wstring path, HWND noti
         entry.typeName = shellTypeName(entry.extension, entry.isDirectory());
         result->entries.push_back(std::move(entry));
 
-        // Cooperative cancellation: bail without posting if a newer
-        // navigation has already superseded this enumeration. Checked
-        // every iteration (an atomic load) rather than batched, since
-        // requestEnumeration() joins the previous worker synchronously on
-        // the UI thread - on a slow (e.g. network) share, each
-        // FindNextFileW call can itself take long enough that batching
-        // this check made cancellation (and therefore that join) laggy.
+        // Yield to the newest pending navigation as soon as this call returns.
         if (stopToken.stop_requested()) {
             FindClose(hFind);
             return;
@@ -277,5 +277,5 @@ void DirectoryModel::run(std::stop_token stopToken, std::wstring path, HWND noti
     }
 
     result->success = true;
-    PostMessageW(notifyWnd, WM_APP_DIR_RESULT, token, reinterpret_cast<LPARAM>(result.release()));
+    publish();
 }

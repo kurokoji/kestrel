@@ -4,12 +4,13 @@
 DirectoryWatcher::~DirectoryWatcher() { stop(); }
 
 void DirectoryWatcher::stop() {
-    if (worker_.joinable()) worker_.request_stop();
+    worker_.cancel();
 }
 
 void DirectoryWatcher::watch(std::wstring path, HWND notifyWnd, WPARAM token) {
-    // Reassigning a jthread requests-stop + joins the previous one first.
-    worker_ = std::jthread(run, std::move(path), notifyWnd, token);
+    worker_.submit([path = std::move(path), notifyWnd, token](std::stop_token stop) mutable {
+        run(stop, std::move(path), notifyWnd, token);
+    });
 }
 
 void DirectoryWatcher::run(std::stop_token stopToken, std::wstring path, HWND notifyWnd, WPARAM token) {
@@ -18,43 +19,47 @@ void DirectoryWatcher::run(std::stop_token stopToken, std::wstring path, HWND no
                               FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED, nullptr);
     if (dir == INVALID_HANDLE_VALUE) return;
 
-    HANDLE wakeEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-    if (!wakeEvent) {
+    HANDLE stopEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    HANDLE ioEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    if (!stopEvent || !ioEvent) {
+        if (stopEvent) CloseHandle(stopEvent);
+        if (ioEvent) CloseHandle(ioEvent);
         CloseHandle(dir);
         return;
     }
 
-    // Lets request_stop() wake the blocked wait below immediately instead
-    // of leaving this thread parked until the next real filesystem event.
-    std::stop_callback wakeOnStop(stopToken, [wakeEvent] { SetEvent(wakeEvent); });
+    {
+        // I/O can reset its completion event. Use a separate stop event,
+        // and unregister the callback before closing that event's handle.
+        std::stop_callback wakeOnStop(stopToken, [stopEvent] { SetEvent(stopEvent); });
+        const HANDLE events[]{stopEvent, ioEvent};
+        alignas(DWORD) BYTE buffer[8192];
+        while (!stopToken.stop_requested()) {
+            OVERLAPPED ov{};
+            ov.hEvent = ioEvent;
+            ResetEvent(ioEvent);
 
-    BYTE buffer[8192];
-    while (!stopToken.stop_requested()) {
-        OVERLAPPED ov{};
-        ov.hEvent = wakeEvent;
-        ResetEvent(wakeEvent);
+            const BOOL issued = ReadDirectoryChangesW(
+                dir, buffer, sizeof(buffer), FALSE,
+                FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME | FILE_NOTIFY_CHANGE_SIZE |
+                    FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_ATTRIBUTES,
+                nullptr, &ov, nullptr);
+            if (!issued && GetLastError() != ERROR_IO_PENDING) break;
 
-        DWORD bytesReturned = 0;
-        const BOOL issued = ReadDirectoryChangesW(
-            dir, buffer, sizeof(buffer), FALSE,
-            FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME | FILE_NOTIFY_CHANGE_SIZE |
-                FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_ATTRIBUTES,
-            &bytesReturned, &ov, nullptr);
-        if (!issued && GetLastError() != ERROR_IO_PENDING) break;
-
-        WaitForSingleObject(wakeEvent, INFINITE);
-
-        if (stopToken.stop_requested()) {
-            CancelIoEx(dir, &ov);
-            break;
-        }
-
-        DWORD transferred = 0;
-        if (GetOverlappedResult(dir, &ov, &transferred, FALSE)) {
+            DWORD transferred = 0;
+            if (WaitForMultipleObjects(2, events, FALSE, INFINITE) != WAIT_OBJECT_0 + 1) {
+                CancelIoEx(dir, &ov);
+                // CancelIoEx only requests cancellation; keep ov and the
+                // buffer alive until the filesystem finishes with them.
+                GetOverlappedResult(dir, &ov, &transferred, TRUE);
+                break;
+            }
+            if (!GetOverlappedResult(dir, &ov, &transferred, FALSE) || stopToken.stop_requested()) break;
             PostMessageW(notifyWnd, WM_APP_DIR_CHANGED, token, 0);
         }
     }
 
-    CloseHandle(wakeEvent);
+    CloseHandle(ioEvent);
+    CloseHandle(stopEvent);
     CloseHandle(dir);
 }

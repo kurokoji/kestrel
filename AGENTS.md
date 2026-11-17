@@ -168,10 +168,13 @@ commit - don't let it drift out of sync with what the app actually does.
   *inactive* pane's background completion can race in and stomp the
   active pane's freshly-displayed state. Bit us during startup (both
   panes load concurrently) and during tree-click navigation.
-- `std::jthread`'s move-assignment auto-`request_stop()`s and joins the
-  previous thread - this is relied on deliberately in `DirectoryModel`
-  and `DirectoryWatcher` as the "cancel and restart" mechanism. Don't
-  "simplify" that into a raw `std::thread` without re-adding cancellation.
+- Don't replace a running `std::jthread` on the UI thread: move assignment
+  stops and joins it, freezing navigation if filesystem I/O is slow.
+  DirectoryModel and DirectoryWatcher use LatestWorker to request stop and
+  retain only the latest pending job. The worker waits for old I/O itself.
+  DirectoryWatcher must use separate stop and I/O events; the OS can reset
+  the I/O event after a stop signal. Drain cancelled overlapped I/O before
+  its stack buffer or OVERLAPPED goes out of scope.
 - **Update: `loadTabIntoLive` now always calls `navigate()` for the tab
   it shows (cached entries are displayed first, then replaced), which
   re-arms `watcher_` and refreshes a stale cache on every tab switch.**
@@ -624,11 +627,9 @@ commit - don't let it drift out of sync with what the app actually does.
   already-expanded/loaded nodes (the "best-effort, never force
   enumeration" contract is unchanged) - a path just isn't in the index if
   its node was never inserted. `DirectoryModel::run`'s cancellation check
-  (`stopToken.stop_requested()`) is now every loop iteration instead of
-  batched every 256 entries - `requestEnumeration()` joins the previous
-  worker synchronously on the UI thread, and on a slow (e.g. network)
-  share each `FindNextFileW` call can itself be slow enough that the old
-  batching made that join noticeably laggy. `FilePane::drawTabItem`'s
+  (`stopToken.stop_requested()`) runs every iteration so a newer pending
+  request can start promptly after the current filesystem call returns.
+  `FilePane::drawTabItem`'s
   brushes for its handful of fixed custom colors (`kActiveTabAccent`, the
   `DriveBadge` palette) are now cached (`cachedBrushFor`, a small
   process-lifetime `COLORREF -> HBRUSH` map) instead of

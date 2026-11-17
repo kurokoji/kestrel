@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Types.h"
+#include "LatestWorker.h"
 
 #include <windows.h>
 #include <atomic>
@@ -21,8 +22,8 @@ struct EnumerationResult {
 
 // Enumerates a single directory on a background jthread and posts the
 // result back to a target window. One DirectoryModel is owned by each
-// FilePane. Starting a new enumeration cancels and joins any enumeration
-// already in flight (std::jthread does this automatically on reassignment).
+// FilePane. A new request asks the running job to stop and replaces any
+// pending request without waiting on filesystem calls on the UI thread.
 class DirectoryModel {
 public:
     DirectoryModel() = default;
@@ -42,6 +43,6 @@ public:
 private:
     static void run(std::stop_token stopToken, std::wstring path, HWND notifyWnd, WPARAM token, uint64_t requestId);
 
-    std::jthread worker_;
+    LatestWorker worker_;
     std::atomic<uint64_t> nextRequestId_{1};
 };
